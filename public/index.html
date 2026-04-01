@@ -7,192 +7,333 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
-:root {
-  --bg:#0d0f12; --panel:#161a22; --border:#252b38;
-  --accent:#f5a623; --teal:#00c9a7; --red:#e03b3b;
-  --text:#e8eaf0; --muted:#55606f;
-  --mono:'SF Mono','Courier New',monospace;
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; background: #000; }
+#map { position: absolute; inset: 0; }
+
+#toppill {
+  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 20; background: rgba(0,0,0,.75); backdrop-filter: blur(10px);
+  border-radius: 30px; padding: 10px 20px;
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid rgba(255,255,255,.12); white-space: nowrap;
 }
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);overflow:hidden;}
-#map{position:absolute;inset:0;z-index:1;}
-#topbar{position:absolute;top:0;left:0;right:0;z-index:20;background:linear-gradient(180deg,rgba(13,15,18,.96) 60%,transparent);padding:14px 16px 30px;display:flex;align-items:center;justify-content:space-between;pointer-events:none;}
-.logo{font-size:17px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--accent);}
-.logo span{color:var(--text);}
-#badge{pointer-events:all;font-family:var(--mono);font-size:11px;letter-spacing:1px;padding:6px 13px;border-radius:20px;border:1px solid var(--border);background:rgba(22,26,34,.9);display:flex;align-items:center;gap:7px;color:var(--muted);transition:color .3s,border-color .3s;}
-#dot{width:7px;height:7px;border-radius:50%;background:var(--muted);transition:all .3s;}
-#badge.on{color:var(--accent);border-color:var(--accent);}
-#badge.on #dot{background:var(--accent);box-shadow:0 0 7px var(--accent);animation:blink 1.4s infinite;}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
-#stats{position:absolute;top:55px;left:0;right:0;z-index:20;display:flex;opacity:0;pointer-events:none;transition:opacity .3s;}
-#stats.show{opacity:1;}
-.sc{flex:1;background:rgba(13,15,18,.85);border-bottom:1px solid var(--border);border-right:1px solid var(--border);padding:7px 10px;text-align:center;}
-.sc:last-child{border-right:none;}
-.sv{font-family:var(--mono);font-size:16px;color:var(--accent);font-weight:700;}
-.sl{font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-top:2px;}
-#toast{position:absolute;top:110px;left:50%;transform:translateX(-50%);z-index:50;background:rgba(22,26,34,.95);border:1px solid var(--border);border-radius:10px;padding:10px 18px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .3s;max-width:88vw;text-align:center;line-height:1.4;}
-#toast.show{opacity:1;}
-#toast.err{border-color:var(--red);color:var(--red);}
-#toast.ok{border-color:var(--teal);color:var(--teal);}
-#bottom{position:absolute;bottom:0;left:0;right:0;z-index:20;background:linear-gradient(0deg,rgba(13,15,18,.97) 55%,transparent);padding:36px 16px 28px;}
-.btn-row{display:flex;gap:10px;align-items:center;}
-#trackBtn{flex:1;padding:18px;border:none;border-radius:13px;cursor:pointer;font-size:16px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;background:var(--accent);color:#000;transition:transform .15s,background .2s;}
-#trackBtn:active{transform:scale(.97);}
-#trackBtn.stop{background:var(--red);color:#fff;}
-#pinBtn{padding:18px 17px;border:2px solid var(--teal);border-radius:13px;background:transparent;color:var(--teal);font-size:22px;cursor:pointer;transition:all .15s;display:none;align-items:center;justify-content:center;}
-#pinBtn.show{display:flex;}
-#pinBtn:active{background:rgba(0,201,167,.15);transform:scale(.97);}
-#histBtn{padding:18px 17px;border:2px solid var(--border);border-radius:13px;background:transparent;color:var(--muted);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;}
-#histBtn:active{background:rgba(255,255,255,.05);}
-#crosshair{position:absolute;top:50%;left:50%;z-index:25;transform:translate(-50%,-55%);pointer-events:none;display:none;flex-direction:column;align-items:center;}
-#crosshair.show{display:flex;}
-#crosshair svg{width:44px;height:44px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.7));}
-#xlabel{margin-top:8px;background:rgba(13,15,18,.92);border:1px solid var(--teal);color:var(--teal);font-size:12px;font-weight:700;letter-spacing:1px;padding:6px 14px;border-radius:20px;text-transform:uppercase;white-space:nowrap;}
-#confirmRow{position:absolute;bottom:120px;left:50%;transform:translateX(-50%);z-index:30;display:none;gap:10px;white-space:nowrap;}
-#confirmRow.show{display:flex;}
-.cpbtn{padding:13px 22px;border-radius:12px;font-size:14px;font-weight:800;border:none;cursor:pointer;letter-spacing:1px;text-transform:uppercase;}
-#cpOk{background:var(--teal);color:#000;}
-#cpNo{background:rgba(22,26,34,.95);color:var(--muted);border:1px solid var(--border);}
-#pinOverlay{position:absolute;inset:0;z-index:100;display:none;background:rgba(0,0,0,.65);backdrop-filter:blur(5px);align-items:flex-end;}
-#pinOverlay.open{display:flex;}
-.sheet{width:100%;background:var(--panel);border-radius:20px 20px 0 0;border-top:2px solid var(--teal);padding:22px 18px 36px;animation:up .22s ease;}
-@keyframes up{from{transform:translateY(36px);opacity:0}to{transform:none;opacity:1}}
-.stitle{font-size:17px;font-weight:900;letter-spacing:1px;text-transform:uppercase;color:var(--teal);margin-bottom:16px;}
-.fg{margin-bottom:13px;}
-.fg label{display:block;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:5px;}
-.fg input,.fg textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:inherit;font-size:15px;padding:11px 13px;outline:none;transition:border-color .2s;}
-.fg input:focus,.fg textarea:focus{border-color:var(--teal);}
-.fg textarea{height:76px;resize:none;}
-.sgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
-.sopt{padding:10px 8px;border:1px solid var(--border);border-radius:8px;text-align:center;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s;user-select:none;}
-.sopt.sel{color:var(--teal);border-color:var(--teal);background:rgba(0,201,167,.1);}
-.sbtnrow{display:flex;gap:10px;margin-top:16px;}
-.ssave{flex:1;padding:14px;background:var(--teal);color:#000;border:none;border-radius:10px;font-size:15px;font-weight:900;letter-spacing:1px;text-transform:uppercase;cursor:pointer;}
-.scancel{padding:14px 18px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:10px;font-size:14px;cursor:pointer;}
-#histOverlay{position:absolute;inset:0;z-index:100;display:none;background:rgba(0,0,0,.65);backdrop-filter:blur(5px);align-items:flex-end;}
-#histOverlay.open{display:flex;}
-.hsheet{width:100%;background:var(--panel);border-radius:20px 20px 0 0;border-top:2px solid var(--accent);max-height:76vh;display:flex;flex-direction:column;animation:up .22s ease;}
-.hhead{padding:20px 18px 0;display:flex;justify-content:space-between;align-items:center;}
-.htitle{font-size:17px;font-weight:900;letter-spacing:1px;text-transform:uppercase;color:var(--accent);}
-.hclose{background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:4px 8px;}
-.htabs{display:flex;border-bottom:1px solid var(--border);margin-top:14px;}
-.htab{flex:1;padding:11px;text-align:center;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;}
-.htab.on{color:var(--accent);border-bottom-color:var(--accent);}
-.hbody{flex:1;overflow-y:auto;padding:12px 18px 28px;}
-.scard{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:13px;margin-bottom:9px;cursor:pointer;display:flex;align-items:center;gap:13px;transition:border-color .15s;}
-.scard:active{border-color:var(--accent);}
-.sbar{width:9px;height:38px;border-radius:4px;flex-shrink:0;}
-.si{flex:1;}
-.sd{font-size:13px;font-weight:700;}
-.sm{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:3px;}
-.pcard{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:13px;margin-bottom:9px;cursor:pointer;}
-.prow{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
-.paddr{font-size:13px;font-weight:700;}
-.pbadge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;flex-shrink:0;text-transform:uppercase;}
-.pnotes{font-size:12px;color:var(--muted);margin-top:5px;}
-.pdate{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:5px;}
-.empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:14px;line-height:1.7;}
-.eicon{font-size:34px;margin-bottom:10px;}
-.leaflet-popup-content-wrapper{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.5);}
-.leaflet-popup-tip{background:var(--panel);}
+.logo { font-size: 15px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #f5a623; }
+.logo span { color: #fff; }
+#dot { width: 8px; height: 8px; border-radius: 50%; background: #444; transition: all .3s; flex-shrink: 0; }
+#dot.on { background: #f5a623; box-shadow: 0 0 6px #f5a623; animation: blink 1.2s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+#timer { font-size: 13px; font-weight: 700; color: #f5a623; display: none; }
+#timer.show { display: block; }
+
+#bottom {
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 20;
+  padding: 16px 16px 40px;
+  background: linear-gradient(0deg, rgba(0,0,0,.85) 50%, transparent);
+  display: flex; gap: 12px;
+}
+#trackBtn {
+  flex: 1; padding: 20px; border: none; border-radius: 16px; cursor: pointer;
+  font-size: 17px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
+  background: #f5a623; color: #000; transition: transform .1s, background .2s;
+}
+#trackBtn:active { transform: scale(.97); }
+#trackBtn.stop { background: #e03b3b; color: #fff; }
+
+#toast {
+  position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%);
+  z-index: 50; background: rgba(0,0,0,.85); color: #fff;
+  border-radius: 20px; padding: 10px 20px; font-size: 14px; font-weight: 600;
+  white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .25s;
+  max-width: 90vw; white-space: normal; text-align: center;
+}
+#toast.show { opacity: 1; }
+
+#sheet-bg {
+  position: absolute; inset: 0; z-index: 100;
+  background: rgba(0,0,0,.5); backdrop-filter: blur(4px);
+  display: none; align-items: flex-end;
+}
+#sheet-bg.open { display: flex; }
+#sheet {
+  width: 100%; background: #1a1a1a; border-radius: 24px 24px 0 0;
+  padding: 12px 20px 48px; animation: up .2s ease;
+  border-top: 1px solid rgba(255,255,255,.1);
+}
+@keyframes up { from{transform:translateY(30px);opacity:0} to{transform:none;opacity:1} }
+.drag-handle { width: 40px; height: 4px; background: #444; border-radius: 2px; margin: 0 auto 18px; }
+.sheet-title { font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 4px; }
+.sheet-addr { font-size: 13px; color: #888; margin-bottom: 16px; min-height: 18px; }
+.status-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.stag {
+  padding: 8px 14px; border-radius: 20px; font-size: 13px; font-weight: 700;
+  border: 1.5px solid #333; color: #888; cursor: pointer; transition: all .15s;
+}
+.stag.sel { background: rgba(255,255,255,.08); }
+.stag[data-s="Dropped Lit"]    { --c:#f5a623; }
+.stag[data-s="No Answer"]      { --c:#888; }
+.stag[data-s="Spoke to Owner"] { --c:#4a9eff; }
+.stag[data-s="Interested"]     { --c:#00c9a7; }
+.stag[data-s="Appointment"]    { --c:#a855f7; }
+.stag { color: var(--c); }
+.stag.sel { border-color: var(--c); }
+textarea {
+  width: 100%; background: #111; border: 1px solid #333; border-radius: 12px;
+  color: #fff; font-family: inherit; font-size: 15px; padding: 12px 14px;
+  resize: none; height: 80px; outline: none; margin-bottom: 14px;
+}
+textarea::placeholder { color: #555; }
+textarea:focus { border-color: #f5a623; }
+.sheet-btns { display: flex; gap: 10px; }
+.btn-save { flex:1; padding:16px; background:#f5a623; color:#000; border:none; border-radius:14px; font-size:16px; font-weight:800; cursor:pointer; }
+.btn-cancel { padding:16px 20px; background:#222; color:#888; border:none; border-radius:14px; font-size:15px; cursor:pointer; }
+
+.you-dot { width:14px; height:14px; border-radius:50%; background:#4a9eff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(74,158,255,.25); }
+.pin-dot { width:13px; height:13px; border-radius:50% 50% 50% 0; border:2px solid #fff; transform:rotate(-45deg); box-shadow:0 2px 8px rgba(0,0,0,.5); }
+
+.leaflet-popup-content-wrapper { background:#1a1a1a; color:#fff; border-radius:12px; border:1px solid #333; box-shadow:0 4px 20px rgba(0,0,0,.6); }
+.leaflet-popup-tip { background:#1a1a1a; }
+.leaflet-popup-content { margin:12px 14px; }
 </style>
 </head>
 <body>
 <div id="map"></div>
-<div id="topbar">
+
+<div id="toppill">
   <div class="logo">Canvass<span>Track</span></div>
-  <div id="badge"><div id="dot"></div><span id="btxt">STANDBY</span></div>
+  <div id="dot"></div>
+  <div id="timer"></div>
 </div>
-<div id="stats">
-  <div class="sc"><div class="sv" id="spts">0</div><div class="sl">GPS Pts</div></div>
-  <div class="sc"><div class="sv" id="spins">0</div><div class="sl">Pins</div></div>
-  <div class="sc"><div class="sv" id="stime">0:00</div><div class="sl">Active</div></div>
-</div>
+
 <div id="toast"></div>
-<div id="crosshair">
-  <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="22" cy="22" r="9" stroke="#00c9a7" stroke-width="2.5"/>
-    <line x1="22" y1="2"  x2="22" y2="11" stroke="#00c9a7" stroke-width="2.5" stroke-linecap="round"/>
-    <line x1="22" y1="33" x2="22" y2="42" stroke="#00c9a7" stroke-width="2.5" stroke-linecap="round"/>
-    <line x1="2"  y1="22" x2="11" y2="22" stroke="#00c9a7" stroke-width="2.5" stroke-linecap="round"/>
-    <line x1="33" y1="22" x2="42" y2="22" stroke="#00c9a7" stroke-width="2.5" stroke-linecap="round"/>
-    <circle cx="22" cy="22" r="2.5" fill="#00c9a7"/>
-  </svg>
-  <div id="xlabel">Drag map · tap confirm</div>
-</div>
-<div id="confirmRow">
-  <button class="cpbtn" id="cpNo">✕ Cancel</button>
-  <button class="cpbtn" id="cpOk">✓ Confirm Location</button>
-</div>
+
 <div id="bottom">
-  <div class="btn-row">
-    <button id="histBtn">📋</button>
-    <button id="trackBtn">▶ Start Tracking</button>
-    <button id="pinBtn">📍</button>
-  </div>
+  <button id="trackBtn">▶ Start Tracking</button>
 </div>
-<div id="pinOverlay">
-  <div class="sheet">
-    <div class="stitle">📍 Log Touch Point</div>
-    <div class="fg"><label>Address (optional)</label><input type="text" id="pinAddr" placeholder="123 Main St"/></div>
-    <div class="fg"><label>Status</label><div class="sgrid" id="sgrid"></div></div>
-    <div class="fg"><label>Notes</label><textarea id="pinNotes" placeholder="Roof age, damage, spoke to owner..."></textarea></div>
-    <div class="sbtnrow">
-      <button class="scancel" id="cancelPin">Cancel</button>
-      <button class="ssave" id="savePin">Save Pin</button>
+
+<div id="sheet-bg">
+  <div id="sheet">
+    <div class="drag-handle"></div>
+    <div class="sheet-title">📍 Log this stop</div>
+    <div class="sheet-addr" id="sheet-addr"></div>
+    <div class="status-row">
+      <div class="stag" data-s="Dropped Lit">Dropped Lit</div>
+      <div class="stag" data-s="No Answer">No Answer</div>
+      <div class="stag" data-s="Spoke to Owner">Spoke to Owner</div>
+      <div class="stag" data-s="Interested">Interested</div>
+      <div class="stag" data-s="Appointment">Appointment</div>
+    </div>
+    <textarea id="notes" placeholder="Notes — roof age, damage, owner name…"></textarea>
+    <div class="sheet-btns">
+      <button class="btn-cancel" id="btn-cancel">Cancel</button>
+      <button class="btn-save" id="btn-save">Save Pin</button>
     </div>
   </div>
 </div>
-<div id="histOverlay">
-  <div class="hsheet">
-    <div class="hhead"><div class="htitle">History</div><button class="hclose" id="closeHist">✕</button></div>
-    <div class="htabs">
-      <div class="htab on" data-tab="routes">Routes</div>
-      <div class="htab" data-tab="pins">Touch Points</div>
-    </div>
-    <div class="hbody" id="hbody"></div>
-  </div>
-</div>
+
 <script>
-const COLORS=['#f5a623','#00c9a7','#4a9eff','#e03b3b','#a855f7','#f97316','#ec4899','#22d3ee'];
-const STATUS_MAP={'Dropped Lit':'#f5a623','No Answer':'#55606f','Spoke to Owner':'#4a9eff','Interested':'#00c9a7','Appointment Set':'#a855f7'};
-const STATUSES=Object.keys(STATUS_MAP);
-const api={async get(p){const r=await fetch(p);return r.json();},async post(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json();},async patch(p){const r=await fetch(p,{method:'PATCH'});return r.json();},async del(p){const r=await fetch(p,{method:'DELETE'});return r.json();}};
-let tracking=false,watchId=null,curSession=null,curLine=null,startTime=null,timerInt=null;
-let sessions=[],pins=[],selStatus='',pendingLL=null,xhairMode=false,histTab='routes';
-let allLines=[],allPinMarkers=[],coordBuffer=[];
-const FLUSH_EVERY=10;
-const map=L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
+const STATUS_COLORS = {
+  'Dropped Lit':'#f5a623','No Answer':'#888','Spoke to Owner':'#4a9eff',
+  'Interested':'#00c9a7','Appointment':'#a855f7'
+};
+const SESSION_COLORS = ['#f5a623','#00c9a7','#4a9eff','#e03b3b','#a855f7','#f97316'];
+
+const api = {
+  get:   p    => fetch(p).then(r=>r.json()),
+  post:  (p,b)=> fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json()),
+  patch: p    => fetch(p,{method:'PATCH'}).then(r=>r.json()),
+};
+
+let map, youMarker;
+let tracking=false, watchId=null, curSession=null, curLine=null;
+let startTime=null, timerInt=null;
+let sessions=[], pins=[];
+let allLines=[], allPinMarkers=[];
+let coordBuffer=[], pendingLL=null, selStatus='';
+
+// Map
+map = L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19}).addTo(map);
-L.control.zoom({position:'topright'}).addTo(map);
+L.control.zoom({position:'bottomright'}).addTo(map);
+
+// Tap map to pin
+map.on('click', e => { if (tracking) openSheet(e.latlng); });
+
+// Toast
 let tTimer;
-function toast(msg,cls='',ms=3000){const el=document.getElementById('toast');el.textContent=msg;el.className='show'+(cls?' '+cls:'');clearTimeout(tTimer);tTimer=setTimeout(()=>el.className='',ms);}
-async function load(){try{[sessions,pins]=await Promise.all([api.get('/api/sessions'),api.get('/api/pins')]);renderAll();}catch(e){toast('Could not reach server','err',5000);}}
-function col(i){return COLORS[i%COLORS.length];}
-function renderAll(){allLines.forEach(l=>map.removeLayer(l));allPinMarkers.forEach(m=>map.removeLayer(m));allLines=[];allPinMarkers=[];sessions.forEach((s,i)=>{if(s.coords&&s.coords.length>1){const pl=L.polyline(s.coords.map(c=>[c.lat,c.lng]),{color:s.color||col(i),weight:4.5,opacity:.8}).addTo(map);allLines.push(pl);}});pins.forEach(p=>addMarker(p));}
-function pinIcon(color){return L.divIcon({html:`<div style="width:13px;height:13px;border-radius:50% 50% 50% 0;background:${color};border:2px solid #fff;transform:rotate(-45deg);box-shadow:0 2px 8px rgba(0,0,0,.6)"></div>`,iconSize:[13,13],iconAnchor:[6,13],className:''});}
-function addMarker(pin){const c=STATUS_MAP[pin.status]||'#f5a623';const m=L.marker([pin.lat,pin.lng],{icon:pinIcon(c)}).bindPopup(`<b>${pin.address||'Touch point'}</b><br><span style="color:${c};font-weight:700">${pin.status||'–'}</span>${pin.notes?'<br><span style="color:#aaa;font-size:12px">'+pin.notes+'</span>':''}`).addTo(map);allPinMarkers.push(m);return m;}
-document.getElementById('trackBtn').addEventListener('click',()=>{tracking?stopT():startT();});
-function startT(){if(!('geolocation' in navigator)){toast('Geolocation not supported','err');return;}toast('Getting GPS…','',3000);navigator.geolocation.getCurrentPosition(async pos=>{const id=Date.now()+'';const color=col(sessions.length);try{await api.post('/api/sessions',{id,color});curSession={id,color,coords:[],coord_count:0,pin_count:0,started_at:new Date().toISOString()};curLine=L.polyline([],{color,weight:5,opacity:.9}).addTo(map);tracking=true;document.getElementById('trackBtn').textContent='⏹ Stop';document.getElementById('trackBtn').classList.add('stop');document.getElementById('badge').classList.add('on');document.getElementById('btxt').textContent='TRACKING';document.getElementById('pinBtn').classList.add('show');document.getElementById('stats').classList.add('show');startTime=Date.now();timerInt=setInterval(tick,1000);watchId=navigator.geolocation.watchPosition(onGPS,onGPSErr,{enableHighAccuracy:true,maximumAge:0,timeout:15000});map.setView([pos.coords.latitude,pos.coords.longitude],15);pendingLL={lat:pos.coords.latitude,lng:pos.coords.longitude};toast('Tracking started','ok',2000);}catch(e){toast('Server error — try again','err');}},err=>{geoErr(err);},{enableHighAccuracy:true,timeout:12000});}
-function onGPS(pos){const coord={lat:pos.coords.latitude,lng:pos.coords.longitude,ts:new Date().toISOString()};pendingLL={lat:coord.lat,lng:coord.lng};if(!curSession)return;curSession.coords.push(coord);curLine.addLatLng([coord.lat,coord.lng]);coordBuffer.push(coord);if(coordBuffer.length>=FLUSH_EVERY)flushCoords();updStats();}
-function onGPSErr(err){geoErr(err);}
-function geoErr(err){const m={1:'Location access denied — allow it in Safari settings.',2:'Location unavailable.',3:'Location timed out.'};toast(m[err.code]||'GPS error','err',5000);}
-async function flushCoords(){if(!curSession||coordBuffer.length===0)return;const batch=[...coordBuffer];coordBuffer=[];try{await api.post(`/api/sessions/${curSession.id}/coords`,{coords:batch});}catch(e){coordBuffer=[...batch,...coordBuffer];}}
-async function stopT(){if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}clearInterval(timerInt);timerInt=null;await flushCoords();if(curSession){try{await api.patch(`/api/sessions/${curSession.id}/end`);}catch(e){}sessions.push({...curSession});if(curLine)allLines.push(curLine);toast(`Route saved · ${curSession.coords.length} pts`,'ok',3000);}tracking=false;curSession=null;curLine=null;startTime=null;coordBuffer=[];document.getElementById('trackBtn').textContent='▶ Start Tracking';document.getElementById('trackBtn').classList.remove('stop');document.getElementById('badge').classList.remove('on');document.getElementById('btxt').textContent='STANDBY';document.getElementById('pinBtn').classList.remove('show');document.getElementById('stats').classList.remove('show');document.getElementById('stime').textContent='0:00';}
-function tick(){if(!startTime)return;const s=Math.floor((Date.now()-startTime)/1000);document.getElementById('stime').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;}
-function updStats(){if(!curSession)return;document.getElementById('spts').textContent=curSession.coords.length;document.getElementById('spins').textContent=pins.filter(p=>p.session_id===curSession.id).length;}
-document.getElementById('pinBtn').addEventListener('click',()=>{if(!tracking)return;if(pendingLL){openPinForm(pendingLL);return;}toast('Getting location…','',2000);const t=setTimeout(()=>{toast('GPS slow — drag map to spot & confirm','',5000);enterXhair();},4000);navigator.geolocation.getCurrentPosition(pos=>{clearTimeout(t);if(xhairMode)exitXhair();openPinForm({lat:pos.coords.latitude,lng:pos.coords.longitude});},err=>{clearTimeout(t);geoErr(err);enterXhair();},{enableHighAccuracy:true,timeout:6000});});
-function enterXhair(){xhairMode=true;document.getElementById('crosshair').classList.add('show');document.getElementById('confirmRow').classList.add('show');}
-function exitXhair(){xhairMode=false;document.getElementById('crosshair').classList.remove('show');document.getElementById('confirmRow').classList.remove('show');}
-document.getElementById('cpOk').addEventListener('click',()=>{const c=map.getCenter();exitXhair();openPinForm({lat:c.lat,lng:c.lng});});
-document.getElementById('cpNo').addEventListener('click',()=>{exitXhair();toast('Pin cancelled','',2000);});
-function openPinForm(ll){pendingLL=ll;selStatus='';document.getElementById('pinAddr').value='';document.getElementById('pinNotes').value='';const grid=document.getElementById('sgrid');grid.innerHTML='';STATUSES.forEach(s=>{const d=document.createElement('div');d.className='sopt';d.textContent=s;d.addEventListener('click',()=>{grid.querySelectorAll('.sopt').forEach(x=>x.classList.remove('sel'));d.classList.add('sel');selStatus=s;});grid.appendChild(d);});document.getElementById('pinOverlay').classList.add('open');}
-document.getElementById('cancelPin').addEventListener('click',()=>{document.getElementById('pinOverlay').classList.remove('open');pendingLL=null;});
-document.getElementById('savePin').addEventListener('click',async()=>{if(!pendingLL){toast('No location','err');return;}const pin={id:Date.now()+'',lat:pendingLL.lat,lng:pendingLL.lng,address:document.getElementById('pinAddr').value.trim(),status:selStatus||'Dropped Lit',notes:document.getElementById('pinNotes').value.trim(),sessionId:curSession?curSession.id:null};try{const saved=await api.post('/api/pins',pin);pins.push(saved);addMarker(saved);updStats();document.getElementById('pinOverlay').classList.remove('open');toast('Pin saved ✓','ok',2000);pendingLL=null;}catch(e){toast('Failed to save pin','err');}});
-document.getElementById('histBtn').addEventListener('click',()=>{renderHist();document.getElementById('histOverlay').classList.add('open');});
-document.getElementById('closeHist').addEventListener('click',()=>document.getElementById('histOverlay').classList.remove('open'));
-document.querySelectorAll('.htab').forEach(t=>t.addEventListener('click',()=>{document.querySelectorAll('.htab').forEach(x=>x.classList.remove('on'));t.classList.add('on');histTab=t.dataset.tab;renderHist();}));
-function renderHist(){const body=document.getElementById('hbody');body.innerHTML='';if(histTab==='routes'){if(!sessions.length){body.innerHTML='<div class="empty"><div class="eicon">🗺️</div>No routes yet.<br>Hit Start Tracking to record your first run.</div>';return;}[...sessions].forEach((s,ri)=>{const d=new Date(s.started_at);const c=document.createElement('div');c.className='scard';c.innerHTML=`<div class="sbar" style="background:${s.color||col(ri)}"></div><div class="si"><div class="sd">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div><div class="sm">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${s.coord_count||s.coords?.length||0} pts · ${s.pin_count||0} pin${s.pin_count!==1?'s':''}</div></div><span style="color:var(--muted);font-size:18px">›</span>`;c.addEventListener('click',()=>{const coords=s.coords||[];if(coords.length>0)map.fitBounds(L.latLngBounds(coords.map(c=>[c.lat,c.lng])),{padding:[50,50]});document.getElementById('histOverlay').classList.remove('open');});body.appendChild(c);});}else{if(!pins.length){body.innerHTML='<div class="empty"><div class="eicon">📍</div>No touch points yet.<br>Drop a pin while tracking.</div>';return;}[...pins].forEach(p=>{const c=STATUS_MAP[p.status]||'#f5a623';const d=new Date(p.created_at);const el=document.createElement('div');el.className='pcard';el.innerHTML=`<div class="prow"><div class="paddr">${p.address||'Unnamed location'}</div><span class="pbadge" style="background:${c}22;color:${c};border:1px solid ${c}55">${p.status||'–'}</span></div>${p.notes?`<div class="pnotes">${p.notes}</div>`:''}<div class="pdate">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>`;el.addEventListener('click',()=>{map.setView([p.lat,p.lng],16);document.getElementById('histOverlay').classList.remove('open');});body.appendChild(el);});}}
+function toast(msg, ms=2500) {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(tTimer); tTimer=setTimeout(()=>el.classList.remove('show'),ms);
+}
+
+// Load
+async function load() {
+  try {
+    [sessions,pins]=await Promise.all([api.get('/api/sessions'),api.get('/api/pins')]);
+    renderAll();
+  } catch(e){}
+}
+
+function sessionColor(i){return SESSION_COLORS[i%SESSION_COLORS.length];}
+
+function renderAll() {
+  allLines.forEach(l=>map.removeLayer(l));
+  allPinMarkers.forEach(m=>map.removeLayer(m));
+  allLines=[]; allPinMarkers=[];
+  sessions.forEach((s,i)=>{
+    if(s.coords&&s.coords.length>1){
+      const pl=L.polyline(s.coords.map(c=>[c.lat,c.lng]),{color:s.color||sessionColor(i),weight:5,opacity:.8}).addTo(map);
+      allLines.push(pl);
+    }
+  });
+  pins.forEach(p=>renderPin(p));
+}
+
+function renderPin(pin) {
+  const color=STATUS_COLORS[pin.status]||'#f5a623';
+  const icon=L.divIcon({html:`<div class="pin-dot" style="background:${color}"></div>`,iconSize:[13,13],iconAnchor:[6,13],className:''});
+  const m=L.marker([pin.lat,pin.lng],{icon})
+    .bindPopup(`<div style="min-width:140px"><div style="font-weight:800;font-size:14px;margin-bottom:4px">${pin.address||'Stop'}</div><div style="color:${color};font-weight:700;font-size:12px">${pin.status||'–'}</div>${pin.notes?`<div style="color:#aaa;font-size:12px;margin-top:4px">${pin.notes}</div>`:''}</div>`)
+    .addTo(map);
+  allPinMarkers.push(m);
+}
+
+function setYou(lat,lng) {
+  if(youMarker) map.removeLayer(youMarker);
+  const icon=L.divIcon({html:'<div class="you-dot"></div>',iconSize:[14,14],iconAnchor:[7,7],className:''});
+  youMarker=L.marker([lat,lng],{icon,zIndexOffset:1000}).addTo(map);
+}
+
+// Tracking
+document.getElementById('trackBtn').addEventListener('click',()=>{ tracking?stopT():startT(); });
+
+function startT() {
+  if(!('geolocation' in navigator)){toast('GPS not available');return;}
+  toast('Finding your location…',3000);
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const {latitude:lat,longitude:lng}=pos.coords;
+    const id=Date.now()+'';
+    const color=sessionColor(sessions.length);
+    try{await api.post('/api/sessions',{id,color});}catch(e){}
+    curSession={id,color,coords:[],started_at:new Date().toISOString()};
+    curLine=L.polyline([],{color,weight:5,opacity:.85}).addTo(map);
+    tracking=true;
+    document.getElementById('trackBtn').textContent='⏹ Stop Tracking';
+    document.getElementById('trackBtn').classList.add('stop');
+    document.getElementById('dot').classList.add('on');
+    document.getElementById('timer').classList.add('show');
+    startTime=Date.now();
+    timerInt=setInterval(tickTimer,1000);
+    map.setView([lat,lng],16);
+    setYou(lat,lng);
+    watchId=navigator.geolocation.watchPosition(onPos,onPosErr,{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
+    toast('Tracking — tap map to drop a pin');
+  },err=>{
+    const m={1:'Location denied — check Settings → Privacy → Location',2:'GPS unavailable',3:'GPS timed out — try again'};
+    toast(m[err.code]||'GPS error',4000);
+  },{enableHighAccuracy:true,timeout:15000});
+}
+
+function onPos(pos){
+  const {latitude:lat,longitude:lng}=pos.coords;
+  setYou(lat,lng);
+  if(!curSession)return;
+  const coord={lat,lng,ts:new Date().toISOString()};
+  curSession.coords.push(coord);
+  curLine.addLatLng([lat,lng]);
+  coordBuffer.push(coord);
+  if(coordBuffer.length>=8)flushCoords();
+}
+function onPosErr(err){
+  const m={1:'Location denied',2:'GPS unavailable',3:'GPS timed out'};
+  toast(m[err.code]||'GPS error',3000);
+}
+
+async function flushCoords(){
+  if(!curSession||!coordBuffer.length)return;
+  const batch=[...coordBuffer];coordBuffer=[];
+  try{await api.post(`/api/sessions/${curSession.id}/coords`,{coords:batch});}
+  catch(e){coordBuffer=[...batch,...coordBuffer];}
+}
+
+async function stopT(){
+  if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
+  clearInterval(timerInt);timerInt=null;
+  await flushCoords();
+  if(curSession){
+    try{await api.patch(`/api/sessions/${curSession.id}/end`);}catch(e){}
+    sessions.push({...curSession});
+    if(curLine)allLines.push(curLine);
+    toast(`Route saved — ${curSession.coords.length} points`);
+  }
+  tracking=false;curSession=null;curLine=null;startTime=null;
+  document.getElementById('trackBtn').textContent='▶ Start Tracking';
+  document.getElementById('trackBtn').classList.remove('stop');
+  document.getElementById('dot').classList.remove('on');
+  document.getElementById('timer').classList.remove('show');
+  document.getElementById('timer').textContent='';
+}
+
+function tickTimer(){
+  if(!startTime)return;
+  const s=Math.floor((Date.now()-startTime)/1000);
+  document.getElementById('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+// Pin sheet
+function openSheet(latlng){
+  pendingLL=latlng; selStatus='';
+  document.getElementById('notes').value='';
+  document.getElementById('sheet-addr').textContent='Getting address…';
+  document.querySelectorAll('.stag').forEach(t=>t.classList.remove('sel'));
+  reverseGeocode(latlng.lat,latlng.lng).then(addr=>{
+    document.getElementById('sheet-addr').textContent=addr;
+  });
+  document.getElementById('sheet-bg').classList.add('open');
+}
+
+document.querySelectorAll('.stag').forEach(tag=>{
+  tag.addEventListener('click',()=>{
+    document.querySelectorAll('.stag').forEach(t=>t.classList.remove('sel'));
+    tag.classList.add('sel'); selStatus=tag.dataset.s;
+  });
+});
+
+document.getElementById('btn-cancel').addEventListener('click',()=>{
+  document.getElementById('sheet-bg').classList.remove('open'); pendingLL=null;
+});
+
+document.getElementById('btn-save').addEventListener('click',async()=>{
+  if(!pendingLL)return;
+  const addr=document.getElementById('sheet-addr').textContent;
+  const pin={
+    id:Date.now()+'', lat:pendingLL.lat, lng:pendingLL.lng,
+    address:['Getting address…','Unknown location'].includes(addr)?'':addr,
+    status:selStatus||'Dropped Lit',
+    notes:document.getElementById('notes').value.trim(),
+    sessionId:curSession?curSession.id:null
+  };
+  try{const saved=await api.post('/api/pins',pin);pins.push(saved);renderPin(saved);toast('Pin saved ✓');}
+  catch(e){toast('Could not save — check connection',3000);}
+  document.getElementById('sheet-bg').classList.remove('open'); pendingLL=null;
+});
+
+document.getElementById('sheet-bg').addEventListener('click',e=>{
+  if(e.target===document.getElementById('sheet-bg')){
+    document.getElementById('sheet-bg').classList.remove('open'); pendingLL=null;
+  }
+});
+
+async function reverseGeocode(lat,lng){
+  try{
+    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,{headers:{'Accept-Language':'en'}});
+    const d=await r.json(); const a=d.address||{};
+    const parts=[a.house_number&&a.road?`${a.house_number} ${a.road}`:a.road,a.city||a.town||a.village||a.county].filter(Boolean);
+    return parts.join(', ')||'Unknown location';
+  }catch(e){return 'Unknown location';}
+}
+
 load();
 </script>
 </body>

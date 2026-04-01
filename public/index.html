@@ -8,250 +8,249 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
 
-/* Flex column — map expands, bottom bar is fixed height below it */
-html, body {
-  height: 100%; width: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #000; overflow: hidden;
-  display: flex; flex-direction: column;
+/* Map fills whole screen */
+#map {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  bottom: 88px; /* matches bottom bar height */
+  z-index: 1;
 }
 
-/* Map wrapper takes all remaining space */
-#map-wrap { flex: 1 1 auto; position: relative; min-height: 0; }
-#map { position: absolute; inset: 0; }
-
-/* Top pill floats over map */
+/* Top pill — fixed over map */
 #toppill {
-  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
-  z-index: 500;
-  background: rgba(0,0,0,.8); backdrop-filter: blur(10px);
-  border-radius: 30px; padding: 10px 20px;
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 100;
+  background: rgba(0,0,0,.82); backdrop-filter: blur(12px);
+  border-radius: 30px; padding: 10px 18px;
   display: flex; align-items: center; gap: 10px;
-  border: 1px solid rgba(255,255,255,.15); white-space: nowrap;
+  border: 1px solid rgba(255,255,255,.13); white-space: nowrap;
   pointer-events: none;
 }
-.logo { font-size: 15px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #f5a623; }
+.logo { font-size: 14px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #f5a623; }
 .logo span { color: #fff; }
-#dot { width: 8px; height: 8px; border-radius: 50%; background: #444; transition: all .3s; }
-#dot.on { background: #f5a623; box-shadow: 0 0 6px #f5a623; animation: blink 1.2s infinite; }
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
-#timer { font-size: 13px; font-weight: 700; color: #f5a623; display: none; }
+#dot { width: 8px; height: 8px; border-radius: 50%; background: #3a3a3a; transition: all .3s; flex-shrink: 0; }
+#dot.on { background: #f5a623; box-shadow: 0 0 7px #f5a623; animation: blink 1.3s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+#timer { font-size: 13px; font-weight: 700; color: #f5a623; display: none; font-variant-numeric: tabular-nums; }
 #timer.show { display: block; }
 
-/* Toast floats over map near bottom */
+/* Toast — fixed above bottom bar */
 #toast {
-  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-  z-index: 500;
-  background: rgba(0,0,0,.88); color: #fff;
-  border-radius: 20px; padding: 10px 20px; font-size: 14px; font-weight: 600;
+  position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+  z-index: 200;
+  background: rgba(20,20,20,.92); color: #fff;
+  border-radius: 22px; padding: 10px 20px;
+  font-size: 14px; font-weight: 600; text-align: center;
+  max-width: 88vw; white-space: normal;
   opacity: 0; pointer-events: none; transition: opacity .25s;
-  max-width: 88%; text-align: center; white-space: normal;
+  border: 1px solid rgba(255,255,255,.1);
 }
 #toast.show { opacity: 1; }
 
-/* Bottom bar — OUTSIDE the map, always visible, never overlaps */
+/* Bottom bar — fixed to bottom of screen, always visible */
 #bottom {
-  flex-shrink: 0;
-  display: flex; gap: 12px;
-  padding: 12px 16px env(safe-area-inset-bottom, 20px);
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 88px;
+  z-index: 300;
   background: #0a0a0a;
-  border-top: 1px solid #1a1a1a;
+  border-top: 1px solid #1c1c1c;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px 8px;
 }
+
 #trackBtn {
-  flex: 1; padding: 18px; border: none; border-radius: 14px; cursor: pointer;
-  font-size: 16px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
-  background: #f5a623; color: #000; transition: transform .1s, background .2s;
-  min-height: 60px;
+  flex: 1;
+  height: 56px;
+  border: none; border-radius: 14px; cursor: pointer;
+  font-size: 16px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
+  background: #f5a623; color: #000;
+  transition: transform .1s, background .2s;
 }
 #trackBtn:active { transform: scale(.97); }
 #trackBtn.stop { background: #e03b3b; color: #fff; }
 
 #pinBtn {
-  width: 64px; min-height: 60px; border: none; border-radius: 14px; cursor: pointer;
-  font-size: 24px; background: #1a1a1a; border: 1.5px solid #2a2a2a;
-  display: none; align-items: center; justify-content: center;
-  flex-shrink: 0; transition: transform .1s, background .15s;
+  width: 60px; height: 56px;
+  border: none; border-radius: 14px; cursor: pointer;
+  font-size: 26px;
+  background: #1c1c1c;
+  border: 1.5px solid #2c2c2c;
+  display: none;
+  align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: transform .1s;
 }
-#pinBtn:active { transform: scale(.97); background: #222; }
+#pinBtn:active { transform: scale(.95); }
 #pinBtn.show { display: flex; }
 
-/* Pin sheet overlay — covers everything */
+/* Sheet overlay */
 #sheet-bg {
-  position: fixed; inset: 0; z-index: 2000;
-  background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,.5); backdrop-filter: blur(5px);
   display: none; align-items: flex-end;
 }
 #sheet-bg.open { display: flex; }
 #sheet {
-  width: 100%; background: #1a1a1a; border-radius: 24px 24px 0 0;
-  padding: 12px 20px env(safe-area-inset-bottom, 32px);
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 32px);
-  animation: up .2s ease;
-  border-top: 1px solid rgba(255,255,255,.1);
+  width: 100%;
+  background: #161616;
+  border-radius: 22px 22px 0 0;
+  border-top: 1px solid rgba(255,255,255,.08);
+  padding: 10px 18px 48px;
+  animation: slideup .22s ease;
 }
-@keyframes up { from{transform:translateY(30px);opacity:0} to{transform:none;opacity:1} }
-.drag-handle { width: 40px; height: 4px; background: #333; border-radius: 2px; margin: 0 auto 16px; }
-.sheet-title { font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 4px; }
-.sheet-addr { font-size: 13px; color: #777; margin-bottom: 14px; min-height: 18px; }
-.status-row { display: flex; gap: 7px; margin-bottom: 14px; flex-wrap: wrap; }
-.stag {
+@keyframes slideup { from{transform:translateY(28px);opacity:0} to{transform:none;opacity:1} }
+.handle { width: 36px; height: 4px; background: #2a2a2a; border-radius: 2px; margin: 0 auto 16px; }
+.stitle { font-size: 17px; font-weight: 800; color: #fff; margin-bottom: 3px; }
+.saddr { font-size: 13px; color: #666; margin-bottom: 14px; min-height: 18px; }
+.stags { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+.tag {
   padding: 8px 13px; border-radius: 20px; font-size: 13px; font-weight: 700;
-  border: 1.5px solid #2a2a2a; cursor: pointer; transition: all .15s;
+  border: 1.5px solid #252525; cursor: pointer; transition: all .15s;
 }
-.stag[data-s="Dropped Lit"]    { color: #f5a623; }
-.stag[data-s="No Answer"]      { color: #777; }
-.stag[data-s="Spoke to Owner"] { color: #4a9eff; }
-.stag[data-s="Interested"]     { color: #00c9a7; }
-.stag[data-s="Appointment"]    { color: #a855f7; }
-.stag.sel { background: rgba(255,255,255,.07); border-color: currentColor; }
-textarea {
-  width: 100%; background: #111; border: 1px solid #2a2a2a; border-radius: 12px;
-  color: #fff; font-family: inherit; font-size: 15px; padding: 12px 14px;
-  resize: none; height: 76px; outline: none; margin-bottom: 14px;
+.tag[data-s="Dropped Lit"]    { color: #f5a623; }
+.tag[data-s="No Answer"]      { color: #666; }
+.tag[data-s="Spoke to Owner"] { color: #4a9eff; }
+.tag[data-s="Interested"]     { color: #00c9a7; }
+.tag[data-s="Appointment"]    { color: #a855f7; }
+.tag.sel { background: rgba(255,255,255,.06); border-color: currentColor; }
+#notes {
+  width: 100%; background: #0d0d0d; border: 1px solid #252525; border-radius: 11px;
+  color: #fff; font-family: inherit; font-size: 15px; padding: 11px 13px;
+  resize: none; height: 76px; outline: none; margin-bottom: 13px;
 }
-textarea::placeholder { color: #444; }
-textarea:focus { border-color: #f5a623; }
-.sheet-btns { display: flex; gap: 10px; }
-.btn-save { flex:1; padding:15px; background:#f5a623; color:#000; border:none; border-radius:13px; font-size:16px; font-weight:800; cursor:pointer; }
-.btn-cancel { padding:15px 18px; background:#222; color:#777; border:none; border-radius:13px; font-size:15px; cursor:pointer; }
+#notes::placeholder { color: #3a3a3a; }
+#notes:focus { border-color: #f5a623; }
+.sbtns { display: flex; gap: 10px; }
+.bsave { flex:1; padding:15px; background:#f5a623; color:#000; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer; }
+.bcancel { padding:15px 18px; background:#1c1c1c; color:#666; border:none; border-radius:12px; font-size:15px; cursor:pointer; }
 
-/* Markers */
-.you-dot { width:14px; height:14px; border-radius:50%; background:#4a9eff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(74,158,255,.2); }
-.pin-dot { width:13px; height:13px; border-radius:50% 50% 50% 0; border:2px solid #fff; transform:rotate(-45deg); box-shadow:0 2px 8px rgba(0,0,0,.5); }
+/* Map markers */
+.you-ring { width:14px; height:14px; border-radius:50%; background:#4a9eff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(74,158,255,.22); }
+.pin-drop { width:13px; height:13px; border-radius:50% 50% 50% 0; border:2.5px solid #fff; transform:rotate(-45deg); box-shadow:0 2px 8px rgba(0,0,0,.55); }
 
-.leaflet-popup-content-wrapper { background:#1a1a1a; color:#fff; border-radius:12px; border:1px solid #2a2a2a; box-shadow:0 4px 20px rgba(0,0,0,.6); }
-.leaflet-popup-tip { background:#1a1a1a; }
-.leaflet-popup-content { margin:12px 14px; }
+.leaflet-popup-content-wrapper { background:#161616; color:#fff; border-radius:12px; border:1px solid #252525; box-shadow:0 6px 24px rgba(0,0,0,.7); }
+.leaflet-popup-tip { background:#161616; }
+.leaflet-popup-content { margin:12px 14px; font-family:-apple-system,sans-serif; }
 </style>
 </head>
 <body>
 
-<!-- Map area -->
-<div id="map-wrap">
-  <div id="map"></div>
-  <div id="toppill">
-    <div class="logo">Canvass<span>Track</span></div>
-    <div id="dot"></div>
-    <div id="timer"></div>
-  </div>
-  <div id="toast"></div>
+<div id="map"></div>
+
+<div id="toppill">
+  <div class="logo">Canvass<span>Track</span></div>
+  <div id="dot"></div>
+  <div id="timer"></div>
 </div>
 
-<!-- Button bar — lives outside the map, always visible -->
+<div id="toast"></div>
+
 <div id="bottom">
   <button id="trackBtn">▶ Start Tracking</button>
   <button id="pinBtn">📍</button>
 </div>
 
-<!-- Pin sheet -->
 <div id="sheet-bg">
   <div id="sheet">
-    <div class="drag-handle"></div>
-    <div class="sheet-title">📍 Log this stop</div>
-    <div class="sheet-addr" id="sheet-addr"></div>
-    <div class="status-row">
-      <div class="stag" data-s="Dropped Lit">Dropped Lit</div>
-      <div class="stag" data-s="No Answer">No Answer</div>
-      <div class="stag" data-s="Spoke to Owner">Spoke to Owner</div>
-      <div class="stag" data-s="Interested">Interested</div>
-      <div class="stag" data-s="Appointment">Appointment</div>
+    <div class="handle"></div>
+    <div class="stitle">📍 Log this stop</div>
+    <div class="saddr" id="saddr"></div>
+    <div class="stags">
+      <div class="tag" data-s="Dropped Lit">Dropped Lit</div>
+      <div class="tag" data-s="No Answer">No Answer</div>
+      <div class="tag" data-s="Spoke to Owner">Spoke to Owner</div>
+      <div class="tag" data-s="Interested">Interested</div>
+      <div class="tag" data-s="Appointment">Appointment</div>
     </div>
     <textarea id="notes" placeholder="Notes — roof age, damage, owner name…"></textarea>
-    <div class="sheet-btns">
-      <button class="btn-cancel" id="btn-cancel">Cancel</button>
-      <button class="btn-save" id="btn-save">Save Pin</button>
+    <div class="sbtns">
+      <button class="bcancel" id="bcancel">Cancel</button>
+      <button class="bsave" id="bsave">Save Pin</button>
     </div>
   </div>
 </div>
 
 <script>
-const STATUS_COLORS = {
-  'Dropped Lit':'#f5a623','No Answer':'#777','Spoke to Owner':'#4a9eff',
-  'Interested':'#00c9a7','Appointment':'#a855f7'
-};
-const SESSION_COLORS = ['#f5a623','#00c9a7','#4a9eff','#e03b3b','#a855f7','#f97316'];
-
-const api = {
-  get:   p    => fetch(p).then(r=>r.json()),
-  post:  (p,b)=> fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json()),
-  patch: p    => fetch(p,{method:'PATCH'}).then(r=>r.json()),
+const STATUS_COLORS={'Dropped Lit':'#f5a623','No Answer':'#666','Spoke to Owner':'#4a9eff','Interested':'#00c9a7','Appointment':'#a855f7'};
+const SESSION_COLORS=['#f5a623','#00c9a7','#4a9eff','#e03b3b','#a855f7','#f97316'];
+const api={
+  get:p=>fetch(p).then(r=>r.json()),
+  post:(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json()),
+  patch:p=>fetch(p,{method:'PATCH'}).then(r=>r.json()),
 };
 
-let map, youMarker;
-let tracking=false, watchId=null, curSession=null, curLine=null;
-let startTime=null, timerInt=null;
-let sessions=[], pins=[];
-let allLines=[], allPinMarkers=[];
-let coordBuffer=[], pendingLL=null, selStatus='';
+let map,youMarker;
+let tracking=false,watchId=null,curSession=null,curLine=null;
+let startTime=null,timerInt=null;
+let sessions=[],pins=[],allLines=[],allPinMarkers=[];
+let coordBuffer=[],pendingLL=null,selStatus='';
 
-// Map
-map = L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
+// Init map - bottom offset matches #bottom height
+map=L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19}).addTo(map);
-L.control.zoom({position:'bottomright'}).addTo(map);
+L.control.zoom({position:'topright'}).addTo(map);
 
 // Tap map to drop pin while tracking
-map.on('click', e => { if (tracking) openSheet(e.latlng); });
-
-// Invalidate map size when layout changes
-window.addEventListener('resize', () => map.invalidateSize());
+map.on('click',e=>{if(tracking)openSheet(e.latlng);});
 
 // Toast
-let tTimer;
-function toast(msg, ms=2500) {
+let tT;
+function toast(msg,ms=2800){
   const el=document.getElementById('toast');
-  el.textContent=msg; el.classList.add('show');
-  clearTimeout(tTimer); tTimer=setTimeout(()=>el.classList.remove('show'),ms);
+  el.textContent=msg;el.classList.add('show');
+  clearTimeout(tT);tT=setTimeout(()=>el.classList.remove('show'),ms);
 }
 
-// Load saved data
-async function load() {
-  try {
-    [sessions,pins]=await Promise.all([api.get('/api/sessions'),api.get('/api/pins')]);
-    renderAll();
-  } catch(e){}
+// Load
+async function load(){
+  try{[sessions,pins]=await Promise.all([api.get('/api/sessions'),api.get('/api/pins')]);renderAll();}catch(e){}
 }
 
-function sessionColor(i){return SESSION_COLORS[i%SESSION_COLORS.length];}
+function sCol(i){return SESSION_COLORS[i%SESSION_COLORS.length];}
 
-function renderAll() {
+function renderAll(){
   allLines.forEach(l=>map.removeLayer(l));
   allPinMarkers.forEach(m=>map.removeLayer(m));
-  allLines=[]; allPinMarkers=[];
+  allLines=[];allPinMarkers=[];
   sessions.forEach((s,i)=>{
     if(s.coords&&s.coords.length>1){
-      const pl=L.polyline(s.coords.map(c=>[c.lat,c.lng]),{color:s.color||sessionColor(i),weight:5,opacity:.8}).addTo(map);
+      const pl=L.polyline(s.coords.map(c=>[c.lat,c.lng]),{color:s.color||sCol(i),weight:5,opacity:.8}).addTo(map);
       allLines.push(pl);
     }
   });
-  pins.forEach(p=>renderPin(p));
+  pins.forEach(p=>drawPin(p));
 }
 
-function renderPin(pin) {
-  const color=STATUS_COLORS[pin.status]||'#f5a623';
-  const icon=L.divIcon({html:`<div class="pin-dot" style="background:${color}"></div>`,iconSize:[13,13],iconAnchor:[6,13],className:''});
+function drawPin(pin){
+  const c=STATUS_COLORS[pin.status]||'#f5a623';
+  const icon=L.divIcon({html:`<div class="pin-drop" style="background:${c}"></div>`,iconSize:[13,13],iconAnchor:[6,13],className:''});
   const m=L.marker([pin.lat,pin.lng],{icon})
-    .bindPopup(`<div style="min-width:140px"><div style="font-weight:800;font-size:14px;margin-bottom:4px">${pin.address||'Stop'}</div><div style="color:${color};font-weight:700;font-size:12px">${pin.status||'–'}</div>${pin.notes?`<div style="color:#aaa;font-size:12px;margin-top:4px">${pin.notes}</div>`:''}</div>`)
+    .bindPopup(`<div style="min-width:130px"><b style="font-size:14px">${pin.address||'Stop'}</b><br><span style="color:${c};font-weight:700;font-size:12px">${pin.status||'–'}</span>${pin.notes?`<br><span style="color:#999;font-size:12px">${pin.notes}</span>`:''}</div>`)
     .addTo(map);
   allPinMarkers.push(m);
 }
 
-function setYou(lat,lng) {
-  if(youMarker) map.removeLayer(youMarker);
-  const icon=L.divIcon({html:'<div class="you-dot"></div>',iconSize:[14,14],iconAnchor:[7,7],className:''});
-  youMarker=L.marker([lat,lng],{icon,zIndexOffset:1000}).addTo(map);
+function setYou(lat,lng){
+  if(youMarker)map.removeLayer(youMarker);
+  const icon=L.divIcon({html:'<div class="you-ring"></div>',iconSize:[14,14],iconAnchor:[7,7],className:''});
+  youMarker=L.marker([lat,lng],{icon,zIndexOffset:9999}).addTo(map);
 }
 
-// ── Tracking ──────────────────────────────────────────────────────
-document.getElementById('trackBtn').addEventListener('click',()=>{ tracking?stopT():startT(); });
+// Track
+document.getElementById('trackBtn').addEventListener('click',()=>tracking?stopT():startT());
 
-function startT() {
+function startT(){
   if(!('geolocation' in navigator)){toast('GPS not available');return;}
-  toast('Finding your location…',3000);
+  toast('Getting your location…',3000);
   navigator.geolocation.getCurrentPosition(async pos=>{
     const {latitude:lat,longitude:lng}=pos.coords;
     const id=Date.now()+'';
-    const color=sessionColor(sessions.length);
+    const color=sCol(sessions.length);
     try{await api.post('/api/sessions',{id,color});}catch(e){}
     curSession={id,color,coords:[],started_at:new Date().toISOString()};
     curLine=L.polyline([],{color,weight:5,opacity:.85}).addTo(map);
@@ -266,15 +265,15 @@ function startT() {
     map.setView([lat,lng],16);
     setYou(lat,lng);
     watchId=navigator.geolocation.watchPosition(onPos,onPosErr,{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
-    toast('Tracking — tap map or 📍 to drop a pin');
+    toast('Tracking • tap map or 📍 to log a stop');
   },err=>{
-    const m={1:'Location denied — check Settings → Privacy → Location',2:'GPS unavailable',3:'GPS timed out — try again'};
-    toast(m[err.code]||'GPS error',4000);
+    const m={1:'Location denied — Settings → Privacy → Location Services → Safari',2:'GPS unavailable',3:'GPS timed out'};
+    toast(m[err.code]||'GPS error',5000);
   },{enableHighAccuracy:true,timeout:15000});
 }
 
 function onPos(pos){
-  const {latitude:lat,longitude:lng}=pos.coords;
+  const{latitude:lat,longitude:lng}=pos.coords;
   setYou(lat,lng);
   if(!curSession)return;
   const coord={lat,lng,ts:new Date().toISOString()};
@@ -320,71 +319,63 @@ function tickTimer(){
   document.getElementById('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 }
 
-// ── Pin button — uses your current GPS location ───────────────────
+// Pin button — uses your current GPS dot
 document.getElementById('pinBtn').addEventListener('click',()=>{
   if(!tracking)return;
-  if(youMarker){
-    openSheet(youMarker.getLatLng());
-  } else {
-    navigator.geolocation.getCurrentPosition(
-      pos=>openSheet({lat:pos.coords.latitude,lng:pos.coords.longitude}),
-      ()=>toast('Could not get location',3000),
-      {enableHighAccuracy:true,timeout:8000}
-    );
-  }
+  if(youMarker)openSheet(youMarker.getLatLng());
+  else navigator.geolocation.getCurrentPosition(
+    p=>openSheet({lat:p.coords.latitude,lng:p.coords.longitude}),
+    ()=>toast('Could not get location'),
+    {enableHighAccuracy:true,timeout:8000}
+  );
 });
 
-// ── Pin sheet ─────────────────────────────────────────────────────
+// Sheet
 function openSheet(latlng){
-  pendingLL=latlng; selStatus='';
+  pendingLL=latlng;selStatus='';
   document.getElementById('notes').value='';
-  document.getElementById('sheet-addr').textContent='Getting address…';
-  document.querySelectorAll('.stag').forEach(t=>t.classList.remove('sel'));
-  reverseGeocode(latlng.lat,latlng.lng).then(addr=>{
-    document.getElementById('sheet-addr').textContent=addr;
-  });
+  document.getElementById('saddr').textContent='Getting address…';
+  document.querySelectorAll('.tag').forEach(t=>t.classList.remove('sel'));
   document.getElementById('sheet-bg').classList.add('open');
+  reverseGeocode(latlng.lat,latlng.lng).then(a=>document.getElementById('saddr').textContent=a);
 }
 
-document.querySelectorAll('.stag').forEach(tag=>{
-  tag.addEventListener('click',()=>{
-    document.querySelectorAll('.stag').forEach(t=>t.classList.remove('sel'));
-    tag.classList.add('sel'); selStatus=tag.dataset.s;
+document.querySelectorAll('.tag').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.tag').forEach(x=>x.classList.remove('sel'));
+    t.classList.add('sel');selStatus=t.dataset.s;
   });
 });
 
-document.getElementById('btn-cancel').addEventListener('click',()=>{
-  document.getElementById('sheet-bg').classList.remove('open'); pendingLL=null;
+document.getElementById('bcancel').addEventListener('click',()=>{
+  document.getElementById('sheet-bg').classList.remove('open');pendingLL=null;
 });
 
-document.getElementById('btn-save').addEventListener('click',async()=>{
+document.getElementById('bsave').addEventListener('click',async()=>{
   if(!pendingLL)return;
-  const addr=document.getElementById('sheet-addr').textContent;
+  const addr=document.getElementById('saddr').textContent;
   const pin={
-    id:Date.now()+'', lat:pendingLL.lat, lng:pendingLL.lng,
+    id:Date.now()+'',lat:pendingLL.lat,lng:pendingLL.lng,
     address:['Getting address…','Unknown location'].includes(addr)?'':addr,
     status:selStatus||'Dropped Lit',
     notes:document.getElementById('notes').value.trim(),
     sessionId:curSession?curSession.id:null
   };
-  try{
-    const saved=await api.post('/api/pins',pin);
-    pins.push(saved); renderPin(saved); toast('Pin saved ✓');
-  }catch(e){toast('Could not save — check connection',3000);}
-  document.getElementById('sheet-bg').classList.remove('open'); pendingLL=null;
+  try{const s=await api.post('/api/pins',pin);pins.push(s);drawPin(s);toast('Pin saved ✓');}
+  catch(e){toast('Could not save',3000);}
+  document.getElementById('sheet-bg').classList.remove('open');pendingLL=null;
 });
 
 document.getElementById('sheet-bg').addEventListener('click',e=>{
   if(e.target===document.getElementById('sheet-bg')){
-    document.getElementById('sheet-bg').classList.remove('open'); pendingLL=null;
+    document.getElementById('sheet-bg').classList.remove('open');pendingLL=null;
   }
 });
 
-// ── Reverse geocode ───────────────────────────────────────────────
 async function reverseGeocode(lat,lng){
   try{
     const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,{headers:{'Accept-Language':'en'}});
-    const d=await r.json(); const a=d.address||{};
+    const d=await r.json();const a=d.address||{};
     const parts=[a.house_number&&a.road?`${a.house_number} ${a.road}`:a.road,a.city||a.town||a.village||a.county].filter(Boolean);
     return parts.join(', ')||'Unknown location';
   }catch(e){return 'Unknown location';}

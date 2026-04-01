@@ -12,7 +12,6 @@ db.exec(`
     ended_at    TEXT,
     active      INTEGER DEFAULT 1
   );
-
   CREATE TABLE IF NOT EXISTS coords (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id  TEXT NOT NULL,
@@ -21,7 +20,6 @@ db.exec(`
     recorded_at TEXT NOT NULL,
     FOREIGN KEY (session_id) REFERENCES sessions(id)
   );
-
   CREATE TABLE IF NOT EXISTS pins (
     id          TEXT PRIMARY KEY,
     session_id  TEXT,
@@ -34,19 +32,16 @@ db.exec(`
     created_at  TEXT NOT NULL,
     FOREIGN KEY (session_id) REFERENCES sessions(id)
   );
-
   CREATE INDEX IF NOT EXISTS idx_coords_session ON coords(session_id);
   CREATE INDEX IF NOT EXISTS idx_pins_session   ON pins(session_id);
 `);
 
-// Add photo column if it doesn't exist yet (for existing DBs)
-try {
-  db.exec(`ALTER TABLE pins ADD COLUMN photo TEXT`);
-} catch(e) { /* already exists */ }
+// Add photo column if upgrading from older DB
+try { db.exec(`ALTER TABLE pins ADD COLUMN photo TEXT`); } catch(e) {}
 
-const createSession = db.prepare(`INSERT INTO sessions (id, color, started_at) VALUES (?, ?, ?)`);
-const endSession    = db.prepare(`UPDATE sessions SET ended_at = ?, active = 0 WHERE id = ?`);
-const getAllSessions = db.prepare(`
+const createSession    = db.prepare(`INSERT INTO sessions (id, color, started_at) VALUES (?, ?, ?)`);
+const endSession       = db.prepare(`UPDATE sessions SET ended_at = ?, active = 0 WHERE id = ?`);
+const getAllSessions    = db.prepare(`
   SELECT s.*, COUNT(DISTINCT c.id) as coord_count, COUNT(DISTINCT p.id) as pin_count
   FROM sessions s
   LEFT JOIN coords c ON c.session_id = s.id
@@ -54,7 +49,6 @@ const getAllSessions = db.prepare(`
   GROUP BY s.id ORDER BY s.started_at DESC
 `);
 const getSessionCoords = db.prepare(`SELECT lat, lng, recorded_at FROM coords WHERE session_id = ? ORDER BY recorded_at ASC`);
-
 const insertCoordsBatch = db.transaction((sessionId, coords) => {
   const stmt = db.prepare(`INSERT INTO coords (session_id, lat, lng, recorded_at) VALUES (?, ?, ?, ?)`);
   for (const c of coords) stmt.run(sessionId, c.lat, c.lng, c.ts || new Date().toISOString());
@@ -64,21 +58,25 @@ const createPin = db.prepare(`
   INSERT INTO pins (id, session_id, lat, lng, address, status, notes, photo, created_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
+const updatePin = db.prepare(`
+  UPDATE pins SET address = ?, status = ?, notes = ?, photo = ? WHERE id = ?
+`);
 const getAllPins = db.prepare(`SELECT * FROM pins ORDER BY created_at DESC`);
 const deletePin  = db.prepare(`DELETE FROM pins WHERE id = ?`);
 
 module.exports = {
   createSession: (id, color) => createSession.run(id, color, new Date().toISOString()),
   endSession:    (id) => endSession.run(new Date().toISOString(), id),
-  getAllSessions: () => {
-    const sessions = getAllSessions.all();
-    return sessions.map(s => ({ ...s, coords: getSessionCoords.all(s.id) }));
-  },
+  getAllSessions: () => getAllSessions.all().map(s => ({ ...s, coords: getSessionCoords.all(s.id) })),
   insertCoordsBatch,
   createPin: (pin) => createPin.run(
     pin.id, pin.sessionId || null, pin.lat, pin.lng,
     pin.address || null, pin.status || 'Dropped Lit',
     pin.notes || null, pin.photo || null, new Date().toISOString()
+  ),
+  updatePin: (pin) => updatePin.run(
+    pin.address || null, pin.status || 'Dropped Lit',
+    pin.notes || null, pin.photo || null, pin.id
   ),
   getAllPins: () => getAllPins.all(),
   deletePin:  (id) => deletePin.run(id),

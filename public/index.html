@@ -9,7 +9,6 @@
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; }
-
 #map { position: fixed; top: 0; left: 0; right: 0; bottom: 88px; z-index: 1; }
 
 #toppill {
@@ -37,7 +36,6 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 }
 #toast.show { opacity: 1; }
 
-/* Bottom bar */
 #bottom {
   position: fixed; bottom: 0; left: 0; right: 0; height: 88px; z-index: 300;
   background: #0a0a0a; border-top: 1px solid #1c1c1c;
@@ -50,90 +48,72 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 }
 #trackBtn:active { transform: scale(.97); }
 #trackBtn.stop { background: #e03b3b; color: #fff; }
-
-#pinBtn {
+.icon-btn {
   width: 60px; height: 56px; border: none; border-radius: 14px; cursor: pointer;
-  font-size: 24px; background: #1c1c1c; border: 1.5px solid #2c2c2c;
-  display: none; align-items: center; justify-content: center; flex-shrink: 0;
-}
-#pinBtn:active { transform: scale(.95); }
-#pinBtn.show { display: flex; }
-
-#historyBtn {
-  width: 60px; height: 56px; border: none; border-radius: 14px; cursor: pointer;
-  font-size: 20px; background: #1c1c1c; border: 1.5px solid #2c2c2c;
+  font-size: 22px; background: #1c1c1c; border: 1.5px solid #2c2c2c;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: transform .1s;
 }
-#historyBtn:active { transform: scale(.95); }
+.icon-btn:active { transform: scale(.95); }
+#pinBtn { display: none; }
+#pinBtn.show { display: flex; }
 
 /* ── History Panel ── */
 #hist-panel {
   position: fixed; inset: 0; z-index: 400;
-  background: #0d0d0d;
-  display: none; flex-direction: column;
+  background: #0d0d0d; display: none; flex-direction: column;
 }
 #hist-panel.open { display: flex; }
-
 #hist-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 56px 20px 16px;
-  border-bottom: 1px solid #1c1c1c; flex-shrink: 0;
-  background: #0d0d0d;
+  padding: 56px 20px 16px; border-bottom: 1px solid #1c1c1c; flex-shrink: 0;
 }
-.hist-title { font-size: 22px; font-weight: 900; color: #fff; }
+.hist-title { font-size: 22px; font-weight: 900; }
 #hist-close {
   width: 36px; height: 36px; border-radius: 50%; background: #1c1c1c;
   border: none; color: #888; font-size: 18px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
-
-/* Tabs */
-#hist-tabs {
-  display: flex; border-bottom: 1px solid #1c1c1c; flex-shrink: 0;
-  background: #0d0d0d;
-}
+#hist-tabs { display: flex; border-bottom: 1px solid #1c1c1c; flex-shrink: 0; }
 .htab {
   flex: 1; padding: 14px 8px; text-align: center;
   font-size: 13px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
-  color: #555; cursor: pointer; border-bottom: 2px solid transparent;
-  transition: all .2s;
+  color: #444; cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s;
 }
 .htab.active { color: #f5a623; border-bottom-color: #f5a623; }
-
-/* Tab bodies */
 #hist-body { flex: 1; overflow-y: auto; padding: 16px; }
 
-/* Route cards */
 .route-card {
   background: #161616; border: 1px solid #222; border-radius: 14px;
   padding: 14px 16px; margin-bottom: 10px; cursor: pointer;
-  display: flex; align-items: center; gap: 14px;
-  transition: border-color .15s;
+  display: flex; align-items: center; gap: 14px; transition: border-color .15s;
 }
 .route-card:active { border-color: #f5a623; }
 .route-swatch { width: 10px; height: 44px; border-radius: 5px; flex-shrink: 0; }
 .route-info { flex: 1; }
-.route-date { font-size: 14px; font-weight: 700; color: #fff; }
-.route-meta { font-size: 12px; color: #555; margin-top: 3px; font-variant-numeric: tabular-nums; }
-.route-arrow { color: #333; font-size: 20px; }
+.route-date { font-size: 14px; font-weight: 700; }
+.route-meta { font-size: 12px; color: #444; margin-top: 3px; }
 
-/* Pin cards */
 .pin-card {
   background: #161616; border: 1px solid #222; border-radius: 14px;
-  padding: 13px 15px; margin-bottom: 10px; cursor: pointer;
-  transition: border-color .15s;
+  padding: 13px 15px; margin-bottom: 10px;
 }
-.pin-card:active { border-color: #f5a623; }
-.pin-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-.pin-addr { font-size: 14px; font-weight: 700; color: #fff; flex: 1; }
-.pin-status {
+.pin-top { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 6px; }
+.pin-addr { font-size: 14px; font-weight: 700; flex: 1; }
+.pin-badge {
   font-size: 11px; font-weight: 800; padding: 4px 10px;
   border-radius: 12px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .5px;
 }
-.pin-notes { font-size: 13px; color: #555; margin-top: 5px; }
-.pin-time { font-size: 11px; color: #3a3a3a; margin-top: 5px; }
+.pin-edit-btn {
+  width: 32px; height: 32px; border-radius: 8px; background: #222; border: 1px solid #2a2a2a;
+  color: #666; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all .15s;
+}
+.pin-edit-btn:active { background: #2a2a2a; color: #f5a623; }
+.pin-notes { font-size: 13px; color: #555; margin-bottom: 8px; }
+.pin-thumb { width: 100%; max-height: 160px; object-fit: cover; border-radius: 10px; margin-bottom: 8px; display: block; }
+.pin-time { font-size: 11px; color: #333; }
 
-/* Coverage view */
 #coverage-wrap { flex: 1; position: relative; display: none; }
 #coverage-wrap.active { display: block; }
 #coverage-map { position: absolute; inset: 0; }
@@ -141,18 +121,17 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
   z-index: 10; background: rgba(0,0,0,.8); color: #fff;
   padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 600;
-  white-space: nowrap; border: 1px solid rgba(255,255,255,.1);
-  pointer-events: none;
+  white-space: nowrap; pointer-events: none;
 }
 
-.empty-state { text-align: center; padding: 60px 20px; color: #3a3a3a; }
+.empty-state { text-align: center; padding: 60px 20px; color: #333; }
 .empty-icon { font-size: 40px; margin-bottom: 12px; }
 .empty-text { font-size: 15px; line-height: 1.6; }
 
-/* Pin sheet */
+/* ── Pin Sheet (new + edit) ── */
 #sheet-bg {
   position: fixed; inset: 0; z-index: 500;
-  background: rgba(0,0,0,.5); backdrop-filter: blur(5px);
+  background: rgba(0,0,0,.55); backdrop-filter: blur(5px);
   display: none; align-items: flex-end;
 }
 #sheet-bg.open { display: flex; }
@@ -160,11 +139,29 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   width: 100%; background: #161616; border-radius: 22px 22px 0 0;
   border-top: 1px solid rgba(255,255,255,.08);
   padding: 10px 18px 48px; animation: slideup .22s ease;
+  max-height: 92vh; overflow-y: auto;
 }
 @keyframes slideup { from{transform:translateY(28px);opacity:0} to{transform:none;opacity:1} }
 .handle { width: 36px; height: 4px; background: #2a2a2a; border-radius: 2px; margin: 0 auto 16px; }
-.stitle { font-size: 17px; font-weight: 800; color: #fff; margin-bottom: 3px; }
-.saddr { font-size: 13px; color: #555; margin-bottom: 14px; min-height: 18px; }
+
+.sheet-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; }
+.stitle { font-size: 17px; font-weight: 800; }
+#delete-pin-btn {
+  padding: 6px 12px; background: transparent; border: 1px solid #3a1a1a;
+  color: #e03b3b; border-radius: 8px; font-size: 13px; font-weight: 700;
+  cursor: pointer; display: none;
+}
+#delete-pin-btn.show { display: block; }
+#delete-pin-btn:active { background: #1a0a0a; }
+
+.saddr-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+#saddr-input {
+  flex: 1; background: #0d0d0d; border: 1px solid #252525; border-radius: 11px;
+  color: #fff; font-family: inherit; font-size: 14px; padding: 10px 13px; outline: none;
+}
+#saddr-input:focus { border-color: #f5a623; }
+
+.field-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #444; margin-bottom: 8px; }
 .stags { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
 .tag { padding: 8px 13px; border-radius: 20px; font-size: 13px; font-weight: 700; border: 1.5px solid #252525; cursor: pointer; transition: all .15s; }
 .tag[data-s="Dropped Lit"]    { color: #f5a623; }
@@ -180,13 +177,29 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 }
 #notes::placeholder { color: #333; }
 #notes:focus { border-color: #f5a623; }
+
+.photo-section { margin-bottom: 14px; }
+#photo-input { display: none; }
+#photo-preview-wrap { display: none; position: relative; margin-bottom: 8px; }
+#photo-preview { width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; display: block; }
+#photo-remove {
+  position: absolute; top: 8px; right: 8px; width: 28px; height: 28px;
+  border-radius: 50%; background: rgba(0,0,0,.7); border: none; color: #fff;
+  font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+#photo-btn {
+  width: 100%; padding: 13px; background: #1a1a1a; border: 1.5px dashed #2a2a2a;
+  border-radius: 12px; color: #555; font-size: 14px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+#photo-btn:active { background: #222; }
+
 .sbtns { display: flex; gap: 10px; }
 .bsave { flex:1; padding:15px; background:#f5a623; color:#000; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer; }
 .bcancel { padding:15px 18px; background:#1c1c1c; color:#555; border:none; border-radius:12px; font-size:15px; cursor:pointer; }
 
 .you-ring { width:16px; height:16px; border-radius:50%; background:#0066ff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(0,102,255,.3),0 2px 8px rgba(0,0,0,.5); }
 .pin-drop { width:14px; height:14px; border-radius:50% 50% 50% 0; border:2.5px solid #fff; transform:rotate(-45deg); box-shadow:0 3px 10px rgba(0,0,0,.7); }
-
 .leaflet-popup-content-wrapper { background:#161616; color:#fff; border-radius:12px; border:1px solid #252525; box-shadow:0 6px 24px rgba(0,0,0,.7); }
 .leaflet-popup-tip { background:#161616; }
 .leaflet-popup-content { margin:12px 14px; font-family:-apple-system,sans-serif; }
@@ -203,9 +216,9 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 <div id="toast"></div>
 
 <div id="bottom">
-  <button id="historyBtn">📋</button>
+  <button class="icon-btn" id="historyBtn">📋</button>
   <button id="trackBtn">▶ Start Tracking</button>
-  <button id="pinBtn">📍</button>
+  <button class="icon-btn" id="pinBtn">📍</button>
 </div>
 
 <!-- History Panel -->
@@ -230,8 +243,17 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 <div id="sheet-bg">
   <div id="sheet">
     <div class="handle"></div>
-    <div class="stitle">📍 Log this stop</div>
-    <div class="saddr" id="saddr"></div>
+    <div class="sheet-header">
+      <div class="stitle" id="sheet-title">📍 Log this stop</div>
+      <button id="delete-pin-btn">🗑 Delete</button>
+    </div>
+
+    <div class="field-label" style="margin-top:10px">Address</div>
+    <div class="saddr-row">
+      <input type="text" id="saddr-input" placeholder="123 Main St"/>
+    </div>
+
+    <div class="field-label">Status</div>
     <div class="stags">
       <div class="tag" data-s="Dropped Lit">Dropped Lit</div>
       <div class="tag" data-s="No Answer">No Answer</div>
@@ -239,10 +261,25 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
       <div class="tag" data-s="Interested">Interested</div>
       <div class="tag" data-s="Appointment">Appointment</div>
     </div>
-    <textarea id="notes" placeholder="Notes — roof age, damage, owner name…"></textarea>
+
+    <div class="field-label">Notes</div>
+    <textarea id="notes" placeholder="Roof age, damage, owner name…"></textarea>
+
+    <div class="photo-section">
+      <div class="field-label">Photo</div>
+      <div id="photo-preview-wrap">
+        <img id="photo-preview" src="" alt=""/>
+        <button id="photo-remove">✕</button>
+      </div>
+      <button id="photo-btn" onclick="document.getElementById('photo-input').click()">
+        📷 Take / Add Photo
+      </button>
+      <input type="file" id="photo-input" accept="image/*" capture="environment"/>
+    </div>
+
     <div class="sbtns">
       <button class="bcancel" id="bcancel">Cancel</button>
-      <button class="bsave" id="bsave">Save Pin</button>
+      <button class="bsave" id="bsave">Save</button>
     </div>
   </div>
 </div>
@@ -251,30 +288,31 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 const STATUS_COLORS={'Dropped Lit':'#f5a623','No Answer':'#666','Spoke to Owner':'#4a9eff','Interested':'#00c9a7','Appointment':'#a855f7'};
 const SESSION_COLORS=['#f5a623','#00c9a7','#4a9eff','#e03b3b','#a855f7','#f97316'];
 const api={
-  get:p=>fetch(p).then(r=>r.json()),
-  post:(p,b)=>fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json()),
-  patch:p=>fetch(p,{method:'PATCH'}).then(r=>r.json()),
+  get:   p    => fetch(p).then(r=>r.json()),
+  post:  (p,b)=> fetch(p,{method:'POST',  headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json()),
+  patch: (p,b)=> fetch(p,{method:'PATCH', headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(r=>r.json()),
+  del:   p    => fetch(p,{method:'DELETE'}).then(r=>r.json()),
 };
 
-let map, coverageMap, youMarker;
+let map,coverageMap,youMarker;
 let tracking=false,watchId=null,curSession=null,curLine=null;
 let startTime=null,timerInt=null;
 let sessions=[],pins=[],allLines=[],allPinMarkers=[];
-let coordBuffer=[],pendingLL=null,selStatus='';
-let histTab='routes', coverageMapInit=false;
+let coordBuffer=[],pendingLL=null,selStatus='',pendingPhoto=null;
+let editingPin=null; // null = new pin, object = editing existing
+let histTab='routes',coverageMapInit=false;
 
-// ── Main map ──────────────────────────────────────────────────────
+// Map
 map=L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
-addSatelliteTiles(map);
+addSatTiles(map);
 L.control.zoom({position:'topright'}).addTo(map);
-map.on('click',e=>{if(tracking)openSheet(e.latlng);});
+map.on('click',e=>{if(tracking)openSheet(e.latlng,null);});
 
-function addSatelliteTiles(m){
+function addSatTiles(m){
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}).addTo(m);
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,opacity:.9}).addTo(m);
 }
 
-// ── Toast ─────────────────────────────────────────────────────────
 let tT;
 function toast(msg,ms=2800){
   const el=document.getElementById('toast');
@@ -282,12 +320,8 @@ function toast(msg,ms=2800){
   clearTimeout(tT);tT=setTimeout(()=>el.classList.remove('show'),ms);
 }
 
-// ── Load ──────────────────────────────────────────────────────────
 async function load(){
-  try{
-    [sessions,pins]=await Promise.all([api.get('/api/sessions'),api.get('/api/pins')]);
-    renderAll();
-  }catch(e){}
+  try{[sessions,pins]=await Promise.all([api.get('/api/sessions'),api.get('/api/pins')]);renderAll();}catch(e){}
 }
 
 function sCol(i){return SESSION_COLORS[i%SESSION_COLORS.length];}
@@ -308,11 +342,29 @@ function renderAll(){
 function drawPin(pin){
   const c=STATUS_COLORS[pin.status]||'#f5a623';
   const icon=L.divIcon({html:`<div class="pin-drop" style="background:${c}"></div>`,iconSize:[14,14],iconAnchor:[7,14],className:''});
+  const photoHtml=pin.photo?`<img src="${pin.photo}" style="width:100%;max-height:120px;object-fit:cover;border-radius:8px;margin-top:6px;display:block"/>`:'';
   const m=L.marker([pin.lat,pin.lng],{icon})
-    .bindPopup(`<div style="min-width:130px"><b style="font-size:14px">${pin.address||'Stop'}</b><br><span style="color:${c};font-weight:700;font-size:12px">${pin.status||'–'}</span>${pin.notes?`<br><span style="color:#999;font-size:12px">${pin.notes}</span>`:''}</div>`)
+    .bindPopup(`
+      <div style="min-width:150px;max-width:220px">
+        <b style="font-size:14px">${pin.address||'Stop'}</b><br>
+        <span style="color:${c};font-weight:700;font-size:12px">${pin.status||'–'}</span>
+        ${pin.notes?`<br><span style="color:#999;font-size:12px">${pin.notes}</span>`:''}
+        ${photoHtml}
+        <br><span onclick="editPinFromMap('${pin.id}')" style="color:#f5a623;font-size:12px;font-weight:700;cursor:pointer;margin-top:6px;display:inline-block">✏️ Edit</span>
+      </div>
+    `)
     .addTo(map);
   allPinMarkers.push(m);
+  return m;
 }
+
+// Called from popup "Edit" link
+window.editPinFromMap = (pinId) => {
+  const pin = pins.find(p=>p.id===pinId);
+  if(!pin)return;
+  map.closePopup();
+  openSheet({lat:pin.lat,lng:pin.lng},pin);
+};
 
 function setYou(lat,lng){
   if(youMarker)map.removeLayer(youMarker);
@@ -328,8 +380,7 @@ function startT(){
   toast('Getting your location…',3000);
   navigator.geolocation.getCurrentPosition(async pos=>{
     const{latitude:lat,longitude:lng}=pos.coords;
-    const id=Date.now()+'';
-    const color=sCol(sessions.length);
+    const id=Date.now()+'';const color=sCol(sessions.length);
     try{await api.post('/api/sessions',{id,color});}catch(e){}
     curSession={id,color,coords:[],started_at:new Date().toISOString()};
     curLine=L.polyline([],{color,weight:6,opacity:1}).addTo(map);
@@ -339,10 +390,8 @@ function startT(){
     document.getElementById('dot').classList.add('on');
     document.getElementById('timer').classList.add('show');
     document.getElementById('pinBtn').classList.add('show');
-    startTime=Date.now();
-    timerInt=setInterval(tickTimer,1000);
-    map.setView([lat,lng],16);
-    setYou(lat,lng);
+    startTime=Date.now();timerInt=setInterval(tickTimer,1000);
+    map.setView([lat,lng],16);setYou(lat,lng);
     watchId=navigator.geolocation.watchPosition(onPos,onPosErr,{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
     toast('Tracking • tap map or 📍 to log a stop');
   },err=>{
@@ -353,13 +402,10 @@ function startT(){
 
 function onPos(pos){
   const{latitude:lat,longitude:lng}=pos.coords;
-  setYou(lat,lng);
-  if(!curSession)return;
+  setYou(lat,lng);if(!curSession)return;
   const coord={lat,lng,ts:new Date().toISOString()};
-  curSession.coords.push(coord);
-  curLine.addLatLng([lat,lng]);
-  coordBuffer.push(coord);
-  if(coordBuffer.length>=8)flushCoords();
+  curSession.coords.push(coord);curLine.addLatLng([lat,lng]);
+  coordBuffer.push(coord);if(coordBuffer.length>=8)flushCoords();
 }
 function onPosErr(err){toast({1:'Location denied',2:'GPS unavailable',3:'GPS timed out'}[err.code]||'GPS error',3000);}
 
@@ -372,12 +418,10 @@ async function flushCoords(){
 
 async function stopT(){
   if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
-  clearInterval(timerInt);timerInt=null;
-  await flushCoords();
+  clearInterval(timerInt);timerInt=null;await flushCoords();
   if(curSession){
     try{await api.patch(`/api/sessions/${curSession.id}/end`);}catch(e){}
-    sessions.push({...curSession});
-    if(curLine)allLines.push(curLine);
+    sessions.push({...curSession});if(curLine)allLines.push(curLine);
     toast(`Route saved — ${curSession.coords.length} points`);
   }
   tracking=false;curSession=null;curLine=null;startTime=null;coordBuffer=[];
@@ -395,25 +439,88 @@ function tickTimer(){
   document.getElementById('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 }
 
-// ── Pin button ────────────────────────────────────────────────────
 document.getElementById('pinBtn').addEventListener('click',()=>{
   if(!tracking)return;
-  if(youMarker)openSheet(youMarker.getLatLng());
+  if(youMarker)openSheet(youMarker.getLatLng(),null);
   else navigator.geolocation.getCurrentPosition(
-    p=>openSheet({lat:p.coords.latitude,lng:p.coords.longitude}),
-    ()=>toast('Could not get location'),
-    {enableHighAccuracy:true,timeout:8000}
+    p=>openSheet({lat:p.coords.latitude,lng:p.coords.longitude},null),
+    ()=>toast('Could not get location'),{enableHighAccuracy:true,timeout:8000}
   );
 });
 
-// ── Pin sheet ─────────────────────────────────────────────────────
-function openSheet(latlng){
-  pendingLL=latlng;selStatus='';
-  document.getElementById('notes').value='';
-  document.getElementById('saddr').textContent='Getting address…';
-  document.querySelectorAll('.tag').forEach(t=>t.classList.remove('sel'));
+// ── Photo ─────────────────────────────────────────────────────────
+document.getElementById('photo-input').addEventListener('change',function(){
+  const file=this.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      const MAX=1000;let w=img.width,h=img.height;
+      if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      pendingPhoto=canvas.toDataURL('image/jpeg',0.75);
+      document.getElementById('photo-preview').src=pendingPhoto;
+      document.getElementById('photo-preview-wrap').style.display='block';
+      document.getElementById('photo-btn').style.display='none';
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById('photo-remove').addEventListener('click',()=>{
+  pendingPhoto=null;
+  document.getElementById('photo-preview-wrap').style.display='none';
+  document.getElementById('photo-btn').style.display='flex';
+  document.getElementById('photo-input').value='';
+});
+
+// ── Pin sheet — handles both NEW and EDIT ─────────────────────────
+// latlng: {lat,lng}  existingPin: null = new, object = editing
+function openSheet(latlng, existingPin){
+  editingPin = existingPin;
+  pendingLL  = latlng;
+  pendingPhoto = null;
+
+  // Reset photo UI
+  document.getElementById('photo-preview-wrap').style.display='none';
+  document.getElementById('photo-btn').style.display='flex';
+  document.getElementById('photo-input').value='';
+
+  if(existingPin){
+    // Edit mode — pre-fill everything
+    document.getElementById('sheet-title').textContent='✏️ Edit Stop';
+    document.getElementById('delete-pin-btn').classList.add('show');
+    document.getElementById('saddr-input').value=existingPin.address||'';
+    document.getElementById('notes').value=existingPin.notes||'';
+    selStatus=existingPin.status||'';
+    document.querySelectorAll('.tag').forEach(t=>{
+      t.classList.toggle('sel',t.dataset.s===selStatus);
+    });
+    if(existingPin.photo){
+      pendingPhoto=existingPin.photo;
+      document.getElementById('photo-preview').src=existingPin.photo;
+      document.getElementById('photo-preview-wrap').style.display='block';
+      document.getElementById('photo-btn').style.display='none';
+    }
+  } else {
+    // New pin mode
+    document.getElementById('sheet-title').textContent='📍 Log this stop';
+    document.getElementById('delete-pin-btn').classList.remove('show');
+    document.getElementById('saddr-input').value='';
+    document.getElementById('notes').value='';
+    selStatus='';
+    document.querySelectorAll('.tag').forEach(t=>t.classList.remove('sel'));
+    // Auto-fill address
+    document.getElementById('saddr-input').value='Getting address…';
+    reverseGeocode(latlng.lat,latlng.lng).then(a=>{
+      document.getElementById('saddr-input').value=a==='Unknown location'?'':a;
+    });
+  }
+
   document.getElementById('sheet-bg').classList.add('open');
-  reverseGeocode(latlng.lat,latlng.lng).then(a=>document.getElementById('saddr').textContent=a);
 }
 
 document.querySelectorAll('.tag').forEach(t=>{
@@ -424,170 +531,173 @@ document.querySelectorAll('.tag').forEach(t=>{
 });
 
 document.getElementById('bcancel').addEventListener('click',()=>{
-  document.getElementById('sheet-bg').classList.remove('open');pendingLL=null;
-});
-
-document.getElementById('bsave').addEventListener('click',async()=>{
-  if(!pendingLL)return;
-  const addr=document.getElementById('saddr').textContent;
-  const pin={
-    id:Date.now()+'',lat:pendingLL.lat,lng:pendingLL.lng,
-    address:['Getting address…','Unknown location'].includes(addr)?'':addr,
-    status:selStatus||'Dropped Lit',
-    notes:document.getElementById('notes').value.trim(),
-    sessionId:curSession?curSession.id:null
-  };
-  try{const s=await api.post('/api/pins',pin);pins.push(s);drawPin(s);toast('Pin saved ✓');}
-  catch(e){toast('Could not save',3000);}
-  document.getElementById('sheet-bg').classList.remove('open');pendingLL=null;
+  document.getElementById('sheet-bg').classList.remove('open');
+  pendingLL=null;pendingPhoto=null;editingPin=null;
 });
 
 document.getElementById('sheet-bg').addEventListener('click',e=>{
   if(e.target===document.getElementById('sheet-bg')){
-    document.getElementById('sheet-bg').classList.remove('open');pendingLL=null;
+    document.getElementById('sheet-bg').classList.remove('open');
+    pendingLL=null;pendingPhoto=null;editingPin=null;
   }
 });
 
-// ── History panel ─────────────────────────────────────────────────
-document.getElementById('historyBtn').addEventListener('click',()=>{
-  document.getElementById('hist-panel').classList.add('open');
-  renderHistTab(histTab);
+document.getElementById('bsave').addEventListener('click',async()=>{
+  const addr=document.getElementById('saddr-input').value.trim();
+  const notes=document.getElementById('notes').value.trim();
+  const status=selStatus||'Dropped Lit';
+  const photo=pendingPhoto||null;
+
+  if(editingPin){
+    // UPDATE existing pin
+    const updated={...editingPin,address:addr,status,notes,photo};
+    try{
+      await api.patch(`/api/pins/${editingPin.id}`,{address:addr,status,notes,photo});
+      // Update local array
+      const idx=pins.findIndex(p=>p.id===editingPin.id);
+      if(idx>=0)pins[idx]=updated;
+      // Redraw all pins on map
+      renderAll();
+      // Refresh history if open
+      if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
+      toast('Pin updated ✓');
+    }catch(e){toast('Could not update',3000);}
+  } else {
+    // CREATE new pin
+    if(!pendingLL)return;
+    const pin={
+      id:Date.now()+'',lat:pendingLL.lat,lng:pendingLL.lng,
+      address:addr,status,notes,photo,
+      sessionId:curSession?curSession.id:null
+    };
+    try{
+      const saved=await api.post('/api/pins',pin);
+      pins.push(saved);drawPin(saved);
+      toast('Pin saved ✓');
+    }catch(e){toast('Could not save',3000);}
+  }
+
+  document.getElementById('sheet-bg').classList.remove('open');
+  pendingLL=null;pendingPhoto=null;editingPin=null;
 });
 
+// Delete pin
+document.getElementById('delete-pin-btn').addEventListener('click',async()=>{
+  if(!editingPin)return;
+  if(!confirm(`Delete this pin?\n${editingPin.address||'Unnamed stop'}`))return;
+  try{
+    await api.del(`/api/pins/${editingPin.id}`);
+    pins=pins.filter(p=>p.id!==editingPin.id);
+    renderAll();
+    if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
+    toast('Pin deleted');
+  }catch(e){toast('Could not delete',3000);}
+  document.getElementById('sheet-bg').classList.remove('open');
+  pendingLL=null;pendingPhoto=null;editingPin=null;
+});
+
+// ── History ───────────────────────────────────────────────────────
+document.getElementById('historyBtn').addEventListener('click',()=>{
+  document.getElementById('hist-panel').classList.add('open');renderHistTab(histTab);
+});
 document.getElementById('hist-close').addEventListener('click',()=>{
   document.getElementById('hist-panel').classList.remove('open');
 });
-
 document.querySelectorAll('.htab').forEach(tab=>{
   tab.addEventListener('click',()=>{
     document.querySelectorAll('.htab').forEach(t=>t.classList.remove('active'));
-    tab.classList.add('active');
-    histTab=tab.dataset.tab;
-    renderHistTab(histTab);
+    tab.classList.add('active');histTab=tab.dataset.tab;renderHistTab(histTab);
   });
 });
 
 function renderHistTab(tab){
   const body=document.getElementById('hist-body');
-  const covWrap=document.getElementById('coverage-wrap');
-
+  const cov=document.getElementById('coverage-wrap');
   if(tab==='coverage'){
-    body.style.display='none';
-    covWrap.classList.add('active');
-    initCoverageMap();
-    return;
+    body.style.display='none';cov.classList.add('active');initCoverageMap();return;
   }
-
-  body.style.display='block';
-  covWrap.classList.remove('active');
+  body.style.display='block';cov.classList.remove('active');
 
   if(tab==='routes'){
-    if(!sessions.length){
-      body.innerHTML=`<div class="empty-state"><div class="empty-icon">🗺️</div><div class="empty-text">No routes yet.<br>Start tracking to record your first run.</div></div>`;
-      return;
-    }
+    if(!sessions.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">🗺️</div><div class="empty-text">No routes yet.<br>Start tracking to record your first run.</div></div>`;return;}
     body.innerHTML='';
     [...sessions].reverse().forEach((s,ri)=>{
       const idx=sessions.length-1-ri;
       const d=new Date(s.started_at);
       const coords=s.coords||[];
-      const pinCount=pins.filter(p=>p.session_id===s.id||p.sessionId===s.id).length;
-      const card=document.createElement('div');
-      card.className='route-card';
-      card.innerHTML=`
-        <div class="route-swatch" style="background:${s.color||sCol(idx)}"></div>
-        <div class="route-info">
-          <div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>
-          <div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} GPS points · ${pinCount} pin${pinCount!==1?'s':''}</div>
-        </div>
-        <div class="route-arrow">›</div>
-      `;
+      const pc=pins.filter(p=>p.session_id===s.id||p.sessionId===s.id).length;
+      const card=document.createElement('div');card.className='route-card';
+      card.innerHTML=`<div class="route-swatch" style="background:${s.color||sCol(idx)}"></div><div class="route-info"><div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div><div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} pts · ${pc} pin${pc!==1?'s':''}</div></div><div style="color:#333;font-size:20px">›</div>`;
       card.addEventListener('click',()=>{
         document.getElementById('hist-panel').classList.remove('open');
-        if(coords.length>1){
-          map.fitBounds(L.latLngBounds(coords.map(c=>[c.lat,c.lng])),{padding:[40,40]});
-        }
+        if(coords.length>1)map.fitBounds(L.latLngBounds(coords.map(c=>[c.lat,c.lng])),{padding:[40,40]});
       });
       body.appendChild(card);
     });
   }
 
   if(tab==='pins'){
-    if(!pins.length){
-      body.innerHTML=`<div class="empty-state"><div class="empty-icon">📍</div><div class="empty-text">No touch points yet.<br>Tap 📍 or tap the map while tracking to log a stop.</div></div>`;
-      return;
-    }
+    if(!pins.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">📍</div><div class="empty-text">No touch points yet.<br>Tap 📍 or tap the map while tracking to log a stop.</div></div>`;return;}
     body.innerHTML='';
     [...pins].reverse().forEach(pin=>{
       const c=STATUS_COLORS[pin.status]||'#f5a623';
-      const d=new Date(pin.created_at||pin.date||Date.now());
-      const card=document.createElement('div');
-      card.className='pin-card';
+      const d=new Date(pin.created_at||Date.now());
+      const card=document.createElement('div');card.className='pin-card';
       card.innerHTML=`
-        <div class="pin-row">
+        <div class="pin-top">
           <div class="pin-addr">${pin.address||'Unnamed stop'}</div>
-          <span class="pin-status" style="background:${c}22;color:${c};border:1px solid ${c}44">${pin.status||'–'}</span>
+          <span class="pin-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${pin.status||'–'}</span>
+          <button class="pin-edit-btn" data-id="${pin.id}">✏️</button>
         </div>
         ${pin.notes?`<div class="pin-notes">${pin.notes}</div>`:''}
+        ${pin.photo?`<img class="pin-thumb" src="${pin.photo}" alt="roof photo"/>`:''}
         <div class="pin-time">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
       `;
-      card.addEventListener('click',()=>{
+      // Tap card = jump to map
+      card.addEventListener('click',e=>{
+        if(e.target.classList.contains('pin-edit-btn'))return;
         document.getElementById('hist-panel').classList.remove('open');
         map.setView([pin.lat,pin.lng],18);
         setTimeout(()=>{
-          const marker=allPinMarkers.find(m=>{const ll=m.getLatLng();return Math.abs(ll.lat-pin.lat)<0.0001&&Math.abs(ll.lng-pin.lng)<0.0001;});
-          if(marker)marker.openPopup();
+          const m=allPinMarkers.find(m=>{const ll=m.getLatLng();return Math.abs(ll.lat-pin.lat)<0.0001&&Math.abs(ll.lng-pin.lng)<0.0001;});
+          if(m)m.openPopup();
         },300);
+      });
+      // Edit button
+      card.querySelector('.pin-edit-btn').addEventListener('click',e=>{
+        e.stopPropagation();
+        document.getElementById('hist-panel').classList.remove('open');
+        openSheet({lat:pin.lat,lng:pin.lng},pin);
       });
       body.appendChild(card);
     });
   }
 }
 
-// ── Coverage map ──────────────────────────────────────────────────
 function initCoverageMap(){
   if(!coverageMapInit){
     coverageMap=L.map('coverage-map',{zoomControl:true,attributionControl:false});
-    addSatelliteTiles(coverageMap);
-    coverageMapInit=true;
+    addSatTiles(coverageMap);coverageMapInit=true;
   }
-
-  // Remove old layers except tiles
-  coverageMap.eachLayer(l=>{ if(l instanceof L.Polyline||l instanceof L.Marker) coverageMap.removeLayer(l); });
-
-  if(!sessions.length){
-    // No data yet — center on default
-    coverageMap.setView([38.85,-76.53],13);
-    return;
-  }
-
+  coverageMap.eachLayer(l=>{if(l instanceof L.Polyline||l instanceof L.Marker)coverageMap.removeLayer(l);});
   const allCoords=[];
-
-  // Draw ALL routes in a single orange color on the coverage map
   sessions.forEach(s=>{
     if(s.coords&&s.coords.length>1){
       const lls=s.coords.map(c=>[c.lat,c.lng]);
-      L.polyline(lls,{color:'#f5a623',weight:4,opacity:.85}).addTo(coverageMap);
+      L.polyline(lls,{color:'#f5a623',weight:4,opacity:.9}).addTo(coverageMap);
       lls.forEach(ll=>allCoords.push(ll));
     }
   });
-
-  // Also show pins
   pins.forEach(pin=>{
     const c=STATUS_COLORS[pin.status]||'#f5a623';
     const icon=L.divIcon({html:`<div class="pin-drop" style="background:${c}"></div>`,iconSize:[14,14],iconAnchor:[7,14],className:''});
     L.marker([pin.lat,pin.lng],{icon}).addTo(coverageMap);
   });
-
-  if(allCoords.length>0){
-    coverageMap.fitBounds(L.latLngBounds(allCoords),{padding:[30,30]});
-  }
-
-  // Trigger resize after panel is visible
+  if(allCoords.length>0)coverageMap.fitBounds(L.latLngBounds(allCoords),{padding:[30,30]});
+  else coverageMap.setView([38.85,-76.53],13);
   setTimeout(()=>coverageMap.invalidateSize(),100);
 }
 
-// ── Reverse geocode ───────────────────────────────────────────────
 async function reverseGeocode(lat,lng){
   try{
     const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,{headers:{'Accept-Language':'en'}});

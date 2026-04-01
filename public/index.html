@@ -130,8 +130,8 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 .bcancel { padding:15px 18px; background:#1c1c1c; color:#666; border:none; border-radius:12px; font-size:15px; cursor:pointer; }
 
 /* Map markers */
-.you-ring { width:14px; height:14px; border-radius:50%; background:#4a9eff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(74,158,255,.22); }
-.pin-drop { width:13px; height:13px; border-radius:50% 50% 50% 0; border:2.5px solid #fff; transform:rotate(-45deg); box-shadow:0 2px 8px rgba(0,0,0,.55); }
+.you-ring { width:16px; height:16px; border-radius:50%; background:#0066ff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(0,102,255,.35), 0 2px 8px rgba(0,0,0,.5); }
+.pin-drop { width:14px; height:14px; border-radius:50% 50% 50% 0; border:2.5px solid #fff; transform:rotate(-45deg); box-shadow:0 3px 10px rgba(0,0,0,.7); }
 
 .leaflet-popup-content-wrapper { background:#161616; color:#fff; border-radius:12px; border:1px solid #252525; box-shadow:0 6px 24px rgba(0,0,0,.7); }
 .leaflet-popup-tip { background:#161616; }
@@ -192,7 +192,10 @@ let coordBuffer=[],pendingLL=null,selStatus='';
 
 // Init map - bottom offset matches #bottom height
 map=L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19}).addTo(map);
+// Esri satellite — free, no API key, shows actual houses and rooftops
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom:19}).addTo(map);
+// Street labels on top
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {maxZoom:19, opacity:0.9}).addTo(map);
 L.control.zoom({position:'topright'}).addTo(map);
 
 // Tap map to drop pin while tracking
@@ -219,7 +222,7 @@ function renderAll(){
   allLines=[];allPinMarkers=[];
   sessions.forEach((s,i)=>{
     if(s.coords&&s.coords.length>1){
-      const pl=L.polyline(s.coords.map(c=>[c.lat,c.lng]),{color:s.color||sCol(i),weight:5,opacity:.8}).addTo(map);
+      const pl=L.polyline(s.coords.map(c=>[c.lat,c.lng]),{color:s.color||sCol(i),weight:6,opacity:1}).addTo(map);
       allLines.push(pl);
     }
   });

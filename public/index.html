@@ -8,87 +8,148 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; }
 
-/* Map fills whole screen */
-#map {
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  bottom: 88px; /* matches bottom bar height */
-  z-index: 1;
-}
+#map { position: fixed; top: 0; left: 0; right: 0; bottom: 88px; z-index: 1; }
 
-/* Top pill — fixed over map */
 #toppill {
   position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
-  z-index: 100;
-  background: rgba(0,0,0,.82); backdrop-filter: blur(12px);
+  z-index: 100; background: rgba(0,0,0,.82); backdrop-filter: blur(12px);
   border-radius: 30px; padding: 10px 18px;
   display: flex; align-items: center; gap: 10px;
-  border: 1px solid rgba(255,255,255,.13); white-space: nowrap;
-  pointer-events: none;
+  border: 1px solid rgba(255,255,255,.13); white-space: nowrap; pointer-events: none;
 }
 .logo { font-size: 14px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #f5a623; }
 .logo span { color: #fff; }
-#dot { width: 8px; height: 8px; border-radius: 50%; background: #3a3a3a; transition: all .3s; flex-shrink: 0; }
+#dot { width: 8px; height: 8px; border-radius: 50%; background: #3a3a3a; transition: all .3s; }
 #dot.on { background: #f5a623; box-shadow: 0 0 7px #f5a623; animation: blink 1.3s infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
-#timer { font-size: 13px; font-weight: 700; color: #f5a623; display: none; font-variant-numeric: tabular-nums; }
+#timer { font-size: 13px; font-weight: 700; color: #f5a623; display: none; }
 #timer.show { display: block; }
 
-/* Toast — fixed above bottom bar */
 #toast {
   position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
-  z-index: 200;
-  background: rgba(20,20,20,.92); color: #fff;
-  border-radius: 22px; padding: 10px 20px;
-  font-size: 14px; font-weight: 600; text-align: center;
-  max-width: 88vw; white-space: normal;
+  z-index: 200; background: rgba(20,20,20,.92); color: #fff;
+  border-radius: 22px; padding: 10px 20px; font-size: 14px; font-weight: 600;
+  max-width: 88vw; text-align: center; white-space: normal;
   opacity: 0; pointer-events: none; transition: opacity .25s;
   border: 1px solid rgba(255,255,255,.1);
 }
 #toast.show { opacity: 1; }
 
-/* Bottom bar — fixed to bottom of screen, always visible */
+/* Bottom bar */
 #bottom {
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  height: 88px;
-  z-index: 300;
-  background: #0a0a0a;
-  border-top: 1px solid #1c1c1c;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 16px 8px;
+  position: fixed; bottom: 0; left: 0; right: 0; height: 88px; z-index: 300;
+  background: #0a0a0a; border-top: 1px solid #1c1c1c;
+  display: flex; align-items: center; gap: 10px; padding: 0 16px 8px;
 }
-
 #trackBtn {
-  flex: 1;
-  height: 56px;
-  border: none; border-radius: 14px; cursor: pointer;
+  flex: 1; height: 56px; border: none; border-radius: 14px; cursor: pointer;
   font-size: 16px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
-  background: #f5a623; color: #000;
-  transition: transform .1s, background .2s;
+  background: #f5a623; color: #000; transition: transform .1s, background .2s;
 }
 #trackBtn:active { transform: scale(.97); }
 #trackBtn.stop { background: #e03b3b; color: #fff; }
 
 #pinBtn {
-  width: 60px; height: 56px;
-  border: none; border-radius: 14px; cursor: pointer;
-  font-size: 26px;
-  background: #1c1c1c;
-  border: 1.5px solid #2c2c2c;
-  display: none;
-  align-items: center; justify-content: center;
-  flex-shrink: 0;
-  transition: transform .1s;
+  width: 60px; height: 56px; border: none; border-radius: 14px; cursor: pointer;
+  font-size: 24px; background: #1c1c1c; border: 1.5px solid #2c2c2c;
+  display: none; align-items: center; justify-content: center; flex-shrink: 0;
 }
 #pinBtn:active { transform: scale(.95); }
 #pinBtn.show { display: flex; }
 
-/* Sheet overlay */
+#historyBtn {
+  width: 60px; height: 56px; border: none; border-radius: 14px; cursor: pointer;
+  font-size: 20px; background: #1c1c1c; border: 1.5px solid #2c2c2c;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+#historyBtn:active { transform: scale(.95); }
+
+/* ── History Panel ── */
+#hist-panel {
+  position: fixed; inset: 0; z-index: 400;
+  background: #0d0d0d;
+  display: none; flex-direction: column;
+}
+#hist-panel.open { display: flex; }
+
+#hist-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 56px 20px 16px;
+  border-bottom: 1px solid #1c1c1c; flex-shrink: 0;
+  background: #0d0d0d;
+}
+.hist-title { font-size: 22px; font-weight: 900; color: #fff; }
+#hist-close {
+  width: 36px; height: 36px; border-radius: 50%; background: #1c1c1c;
+  border: none; color: #888; font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Tabs */
+#hist-tabs {
+  display: flex; border-bottom: 1px solid #1c1c1c; flex-shrink: 0;
+  background: #0d0d0d;
+}
+.htab {
+  flex: 1; padding: 14px 8px; text-align: center;
+  font-size: 13px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  color: #555; cursor: pointer; border-bottom: 2px solid transparent;
+  transition: all .2s;
+}
+.htab.active { color: #f5a623; border-bottom-color: #f5a623; }
+
+/* Tab bodies */
+#hist-body { flex: 1; overflow-y: auto; padding: 16px; }
+
+/* Route cards */
+.route-card {
+  background: #161616; border: 1px solid #222; border-radius: 14px;
+  padding: 14px 16px; margin-bottom: 10px; cursor: pointer;
+  display: flex; align-items: center; gap: 14px;
+  transition: border-color .15s;
+}
+.route-card:active { border-color: #f5a623; }
+.route-swatch { width: 10px; height: 44px; border-radius: 5px; flex-shrink: 0; }
+.route-info { flex: 1; }
+.route-date { font-size: 14px; font-weight: 700; color: #fff; }
+.route-meta { font-size: 12px; color: #555; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.route-arrow { color: #333; font-size: 20px; }
+
+/* Pin cards */
+.pin-card {
+  background: #161616; border: 1px solid #222; border-radius: 14px;
+  padding: 13px 15px; margin-bottom: 10px; cursor: pointer;
+  transition: border-color .15s;
+}
+.pin-card:active { border-color: #f5a623; }
+.pin-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.pin-addr { font-size: 14px; font-weight: 700; color: #fff; flex: 1; }
+.pin-status {
+  font-size: 11px; font-weight: 800; padding: 4px 10px;
+  border-radius: 12px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .5px;
+}
+.pin-notes { font-size: 13px; color: #555; margin-top: 5px; }
+.pin-time { font-size: 11px; color: #3a3a3a; margin-top: 5px; }
+
+/* Coverage view */
+#coverage-wrap { flex: 1; position: relative; display: none; }
+#coverage-wrap.active { display: block; }
+#coverage-map { position: absolute; inset: 0; }
+.coverage-hint {
+  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 10; background: rgba(0,0,0,.8); color: #fff;
+  padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  white-space: nowrap; border: 1px solid rgba(255,255,255,.1);
+  pointer-events: none;
+}
+
+.empty-state { text-align: center; padding: 60px 20px; color: #3a3a3a; }
+.empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-text { font-size: 15px; line-height: 1.6; }
+
+/* Pin sheet */
 #sheet-bg {
   position: fixed; inset: 0; z-index: 500;
   background: rgba(0,0,0,.5); backdrop-filter: blur(5px);
@@ -96,24 +157,18 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 }
 #sheet-bg.open { display: flex; }
 #sheet {
-  width: 100%;
-  background: #161616;
-  border-radius: 22px 22px 0 0;
+  width: 100%; background: #161616; border-radius: 22px 22px 0 0;
   border-top: 1px solid rgba(255,255,255,.08);
-  padding: 10px 18px 48px;
-  animation: slideup .22s ease;
+  padding: 10px 18px 48px; animation: slideup .22s ease;
 }
 @keyframes slideup { from{transform:translateY(28px);opacity:0} to{transform:none;opacity:1} }
 .handle { width: 36px; height: 4px; background: #2a2a2a; border-radius: 2px; margin: 0 auto 16px; }
 .stitle { font-size: 17px; font-weight: 800; color: #fff; margin-bottom: 3px; }
-.saddr { font-size: 13px; color: #666; margin-bottom: 14px; min-height: 18px; }
+.saddr { font-size: 13px; color: #555; margin-bottom: 14px; min-height: 18px; }
 .stags { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
-.tag {
-  padding: 8px 13px; border-radius: 20px; font-size: 13px; font-weight: 700;
-  border: 1.5px solid #252525; cursor: pointer; transition: all .15s;
-}
+.tag { padding: 8px 13px; border-radius: 20px; font-size: 13px; font-weight: 700; border: 1.5px solid #252525; cursor: pointer; transition: all .15s; }
 .tag[data-s="Dropped Lit"]    { color: #f5a623; }
-.tag[data-s="No Answer"]      { color: #666; }
+.tag[data-s="No Answer"]      { color: #555; }
 .tag[data-s="Spoke to Owner"] { color: #4a9eff; }
 .tag[data-s="Interested"]     { color: #00c9a7; }
 .tag[data-s="Appointment"]    { color: #a855f7; }
@@ -123,14 +178,13 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   color: #fff; font-family: inherit; font-size: 15px; padding: 11px 13px;
   resize: none; height: 76px; outline: none; margin-bottom: 13px;
 }
-#notes::placeholder { color: #3a3a3a; }
+#notes::placeholder { color: #333; }
 #notes:focus { border-color: #f5a623; }
 .sbtns { display: flex; gap: 10px; }
 .bsave { flex:1; padding:15px; background:#f5a623; color:#000; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer; }
-.bcancel { padding:15px 18px; background:#1c1c1c; color:#666; border:none; border-radius:12px; font-size:15px; cursor:pointer; }
+.bcancel { padding:15px 18px; background:#1c1c1c; color:#555; border:none; border-radius:12px; font-size:15px; cursor:pointer; }
 
-/* Map markers */
-.you-ring { width:16px; height:16px; border-radius:50%; background:#0066ff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(0,102,255,.35), 0 2px 8px rgba(0,0,0,.5); }
+.you-ring { width:16px; height:16px; border-radius:50%; background:#0066ff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(0,102,255,.3),0 2px 8px rgba(0,0,0,.5); }
 .pin-drop { width:14px; height:14px; border-radius:50% 50% 50% 0; border:2.5px solid #fff; transform:rotate(-45deg); box-shadow:0 3px 10px rgba(0,0,0,.7); }
 
 .leaflet-popup-content-wrapper { background:#161616; color:#fff; border-radius:12px; border:1px solid #252525; box-shadow:0 6px 24px rgba(0,0,0,.7); }
@@ -141,20 +195,38 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 <body>
 
 <div id="map"></div>
-
 <div id="toppill">
   <div class="logo">Canvass<span>Track</span></div>
   <div id="dot"></div>
   <div id="timer"></div>
 </div>
-
 <div id="toast"></div>
 
 <div id="bottom">
+  <button id="historyBtn">📋</button>
   <button id="trackBtn">▶ Start Tracking</button>
   <button id="pinBtn">📍</button>
 </div>
 
+<!-- History Panel -->
+<div id="hist-panel">
+  <div id="hist-header">
+    <div class="hist-title">History</div>
+    <button id="hist-close">✕</button>
+  </div>
+  <div id="hist-tabs">
+    <div class="htab active" data-tab="routes">Routes</div>
+    <div class="htab" data-tab="pins">Touch Points</div>
+    <div class="htab" data-tab="coverage">Coverage</div>
+  </div>
+  <div id="hist-body"></div>
+  <div id="coverage-wrap">
+    <div id="coverage-map"></div>
+    <div class="coverage-hint">All routes — find uncovered streets</div>
+  </div>
+</div>
+
+<!-- Pin Sheet -->
 <div id="sheet-bg">
   <div id="sheet">
     <div class="handle"></div>
@@ -184,24 +256,25 @@ const api={
   patch:p=>fetch(p,{method:'PATCH'}).then(r=>r.json()),
 };
 
-let map,youMarker;
+let map, coverageMap, youMarker;
 let tracking=false,watchId=null,curSession=null,curLine=null;
 let startTime=null,timerInt=null;
 let sessions=[],pins=[],allLines=[],allPinMarkers=[];
 let coordBuffer=[],pendingLL=null,selStatus='';
+let histTab='routes', coverageMapInit=false;
 
-// Init map - bottom offset matches #bottom height
+// ── Main map ──────────────────────────────────────────────────────
 map=L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
-// Esri satellite — free, no API key, shows actual houses and rooftops
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom:19}).addTo(map);
-// Street labels on top
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {maxZoom:19, opacity:0.9}).addTo(map);
+addSatelliteTiles(map);
 L.control.zoom({position:'topright'}).addTo(map);
-
-// Tap map to drop pin while tracking
 map.on('click',e=>{if(tracking)openSheet(e.latlng);});
 
-// Toast
+function addSatelliteTiles(m){
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}).addTo(m);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,opacity:.9}).addTo(m);
+}
+
+// ── Toast ─────────────────────────────────────────────────────────
 let tT;
 function toast(msg,ms=2800){
   const el=document.getElementById('toast');
@@ -209,9 +282,12 @@ function toast(msg,ms=2800){
   clearTimeout(tT);tT=setTimeout(()=>el.classList.remove('show'),ms);
 }
 
-// Load
+// ── Load ──────────────────────────────────────────────────────────
 async function load(){
-  try{[sessions,pins]=await Promise.all([api.get('/api/sessions'),api.get('/api/pins')]);renderAll();}catch(e){}
+  try{
+    [sessions,pins]=await Promise.all([api.get('/api/sessions'),api.get('/api/pins')]);
+    renderAll();
+  }catch(e){}
 }
 
 function sCol(i){return SESSION_COLORS[i%SESSION_COLORS.length];}
@@ -231,7 +307,7 @@ function renderAll(){
 
 function drawPin(pin){
   const c=STATUS_COLORS[pin.status]||'#f5a623';
-  const icon=L.divIcon({html:`<div class="pin-drop" style="background:${c}"></div>`,iconSize:[13,13],iconAnchor:[6,13],className:''});
+  const icon=L.divIcon({html:`<div class="pin-drop" style="background:${c}"></div>`,iconSize:[14,14],iconAnchor:[7,14],className:''});
   const m=L.marker([pin.lat,pin.lng],{icon})
     .bindPopup(`<div style="min-width:130px"><b style="font-size:14px">${pin.address||'Stop'}</b><br><span style="color:${c};font-weight:700;font-size:12px">${pin.status||'–'}</span>${pin.notes?`<br><span style="color:#999;font-size:12px">${pin.notes}</span>`:''}</div>`)
     .addTo(map);
@@ -240,23 +316,23 @@ function drawPin(pin){
 
 function setYou(lat,lng){
   if(youMarker)map.removeLayer(youMarker);
-  const icon=L.divIcon({html:'<div class="you-ring"></div>',iconSize:[14,14],iconAnchor:[7,7],className:''});
+  const icon=L.divIcon({html:'<div class="you-ring"></div>',iconSize:[16,16],iconAnchor:[8,8],className:''});
   youMarker=L.marker([lat,lng],{icon,zIndexOffset:9999}).addTo(map);
 }
 
-// Track
+// ── Tracking ──────────────────────────────────────────────────────
 document.getElementById('trackBtn').addEventListener('click',()=>tracking?stopT():startT());
 
 function startT(){
   if(!('geolocation' in navigator)){toast('GPS not available');return;}
   toast('Getting your location…',3000);
   navigator.geolocation.getCurrentPosition(async pos=>{
-    const {latitude:lat,longitude:lng}=pos.coords;
+    const{latitude:lat,longitude:lng}=pos.coords;
     const id=Date.now()+'';
     const color=sCol(sessions.length);
     try{await api.post('/api/sessions',{id,color});}catch(e){}
     curSession={id,color,coords:[],started_at:new Date().toISOString()};
-    curLine=L.polyline([],{color,weight:5,opacity:.85}).addTo(map);
+    curLine=L.polyline([],{color,weight:6,opacity:1}).addTo(map);
     tracking=true;
     document.getElementById('trackBtn').textContent='⏹ Stop Tracking';
     document.getElementById('trackBtn').classList.add('stop');
@@ -270,7 +346,7 @@ function startT(){
     watchId=navigator.geolocation.watchPosition(onPos,onPosErr,{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
     toast('Tracking • tap map or 📍 to log a stop');
   },err=>{
-    const m={1:'Location denied — Settings → Privacy → Location Services → Safari',2:'GPS unavailable',3:'GPS timed out'};
+    const m={1:'Location denied — Settings → Privacy → Location Services',2:'GPS unavailable',3:'GPS timed out'};
     toast(m[err.code]||'GPS error',5000);
   },{enableHighAccuracy:true,timeout:15000});
 }
@@ -285,10 +361,7 @@ function onPos(pos){
   coordBuffer.push(coord);
   if(coordBuffer.length>=8)flushCoords();
 }
-function onPosErr(err){
-  const m={1:'Location denied',2:'GPS unavailable',3:'GPS timed out'};
-  toast(m[err.code]||'GPS error',3000);
-}
+function onPosErr(err){toast({1:'Location denied',2:'GPS unavailable',3:'GPS timed out'}[err.code]||'GPS error',3000);}
 
 async function flushCoords(){
   if(!curSession||!coordBuffer.length)return;
@@ -322,7 +395,7 @@ function tickTimer(){
   document.getElementById('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 }
 
-// Pin button — uses your current GPS dot
+// ── Pin button ────────────────────────────────────────────────────
 document.getElementById('pinBtn').addEventListener('click',()=>{
   if(!tracking)return;
   if(youMarker)openSheet(youMarker.getLatLng());
@@ -333,7 +406,7 @@ document.getElementById('pinBtn').addEventListener('click',()=>{
   );
 });
 
-// Sheet
+// ── Pin sheet ─────────────────────────────────────────────────────
 function openSheet(latlng){
   pendingLL=latlng;selStatus='';
   document.getElementById('notes').value='';
@@ -375,6 +448,146 @@ document.getElementById('sheet-bg').addEventListener('click',e=>{
   }
 });
 
+// ── History panel ─────────────────────────────────────────────────
+document.getElementById('historyBtn').addEventListener('click',()=>{
+  document.getElementById('hist-panel').classList.add('open');
+  renderHistTab(histTab);
+});
+
+document.getElementById('hist-close').addEventListener('click',()=>{
+  document.getElementById('hist-panel').classList.remove('open');
+});
+
+document.querySelectorAll('.htab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.htab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    histTab=tab.dataset.tab;
+    renderHistTab(histTab);
+  });
+});
+
+function renderHistTab(tab){
+  const body=document.getElementById('hist-body');
+  const covWrap=document.getElementById('coverage-wrap');
+
+  if(tab==='coverage'){
+    body.style.display='none';
+    covWrap.classList.add('active');
+    initCoverageMap();
+    return;
+  }
+
+  body.style.display='block';
+  covWrap.classList.remove('active');
+
+  if(tab==='routes'){
+    if(!sessions.length){
+      body.innerHTML=`<div class="empty-state"><div class="empty-icon">🗺️</div><div class="empty-text">No routes yet.<br>Start tracking to record your first run.</div></div>`;
+      return;
+    }
+    body.innerHTML='';
+    [...sessions].reverse().forEach((s,ri)=>{
+      const idx=sessions.length-1-ri;
+      const d=new Date(s.started_at);
+      const coords=s.coords||[];
+      const pinCount=pins.filter(p=>p.session_id===s.id||p.sessionId===s.id).length;
+      const card=document.createElement('div');
+      card.className='route-card';
+      card.innerHTML=`
+        <div class="route-swatch" style="background:${s.color||sCol(idx)}"></div>
+        <div class="route-info">
+          <div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>
+          <div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} GPS points · ${pinCount} pin${pinCount!==1?'s':''}</div>
+        </div>
+        <div class="route-arrow">›</div>
+      `;
+      card.addEventListener('click',()=>{
+        document.getElementById('hist-panel').classList.remove('open');
+        if(coords.length>1){
+          map.fitBounds(L.latLngBounds(coords.map(c=>[c.lat,c.lng])),{padding:[40,40]});
+        }
+      });
+      body.appendChild(card);
+    });
+  }
+
+  if(tab==='pins'){
+    if(!pins.length){
+      body.innerHTML=`<div class="empty-state"><div class="empty-icon">📍</div><div class="empty-text">No touch points yet.<br>Tap 📍 or tap the map while tracking to log a stop.</div></div>`;
+      return;
+    }
+    body.innerHTML='';
+    [...pins].reverse().forEach(pin=>{
+      const c=STATUS_COLORS[pin.status]||'#f5a623';
+      const d=new Date(pin.created_at||pin.date||Date.now());
+      const card=document.createElement('div');
+      card.className='pin-card';
+      card.innerHTML=`
+        <div class="pin-row">
+          <div class="pin-addr">${pin.address||'Unnamed stop'}</div>
+          <span class="pin-status" style="background:${c}22;color:${c};border:1px solid ${c}44">${pin.status||'–'}</span>
+        </div>
+        ${pin.notes?`<div class="pin-notes">${pin.notes}</div>`:''}
+        <div class="pin-time">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
+      `;
+      card.addEventListener('click',()=>{
+        document.getElementById('hist-panel').classList.remove('open');
+        map.setView([pin.lat,pin.lng],18);
+        setTimeout(()=>{
+          const marker=allPinMarkers.find(m=>{const ll=m.getLatLng();return Math.abs(ll.lat-pin.lat)<0.0001&&Math.abs(ll.lng-pin.lng)<0.0001;});
+          if(marker)marker.openPopup();
+        },300);
+      });
+      body.appendChild(card);
+    });
+  }
+}
+
+// ── Coverage map ──────────────────────────────────────────────────
+function initCoverageMap(){
+  if(!coverageMapInit){
+    coverageMap=L.map('coverage-map',{zoomControl:true,attributionControl:false});
+    addSatelliteTiles(coverageMap);
+    coverageMapInit=true;
+  }
+
+  // Remove old layers except tiles
+  coverageMap.eachLayer(l=>{ if(l instanceof L.Polyline||l instanceof L.Marker) coverageMap.removeLayer(l); });
+
+  if(!sessions.length){
+    // No data yet — center on default
+    coverageMap.setView([38.85,-76.53],13);
+    return;
+  }
+
+  const allCoords=[];
+
+  // Draw ALL routes in a single orange color on the coverage map
+  sessions.forEach(s=>{
+    if(s.coords&&s.coords.length>1){
+      const lls=s.coords.map(c=>[c.lat,c.lng]);
+      L.polyline(lls,{color:'#f5a623',weight:4,opacity:.85}).addTo(coverageMap);
+      lls.forEach(ll=>allCoords.push(ll));
+    }
+  });
+
+  // Also show pins
+  pins.forEach(pin=>{
+    const c=STATUS_COLORS[pin.status]||'#f5a623';
+    const icon=L.divIcon({html:`<div class="pin-drop" style="background:${c}"></div>`,iconSize:[14,14],iconAnchor:[7,14],className:''});
+    L.marker([pin.lat,pin.lng],{icon}).addTo(coverageMap);
+  });
+
+  if(allCoords.length>0){
+    coverageMap.fitBounds(L.latLngBounds(allCoords),{padding:[30,30]});
+  }
+
+  // Trigger resize after panel is visible
+  setTimeout(()=>coverageMap.invalidateSize(),100);
+}
+
+// ── Reverse geocode ───────────────────────────────────────────────
 async function reverseGeocode(lat,lng){
   try{
     const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,{headers:{'Accept-Language':'en'}});

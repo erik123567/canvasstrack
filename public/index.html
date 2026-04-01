@@ -8,119 +8,143 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; background: #000; }
-#map { position: absolute; inset: 0; z-index: 1; }
 
+/* Flex column — map expands, bottom bar is fixed height below it */
+html, body {
+  height: 100%; width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #000; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+
+/* Map wrapper takes all remaining space */
+#map-wrap { flex: 1 1 auto; position: relative; min-height: 0; }
+#map { position: absolute; inset: 0; }
+
+/* Top pill floats over map */
 #toppill {
   position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
-  z-index: 1000; background: rgba(0,0,0,.75); backdrop-filter: blur(10px);
+  z-index: 500;
+  background: rgba(0,0,0,.8); backdrop-filter: blur(10px);
   border-radius: 30px; padding: 10px 20px;
   display: flex; align-items: center; gap: 10px;
-  border: 1px solid rgba(255,255,255,.12); white-space: nowrap;
+  border: 1px solid rgba(255,255,255,.15); white-space: nowrap;
+  pointer-events: none;
 }
 .logo { font-size: 15px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #f5a623; }
 .logo span { color: #fff; }
-#dot { width: 8px; height: 8px; border-radius: 50%; background: #444; transition: all .3s; flex-shrink: 0; }
+#dot { width: 8px; height: 8px; border-radius: 50%; background: #444; transition: all .3s; }
 #dot.on { background: #f5a623; box-shadow: 0 0 6px #f5a623; animation: blink 1.2s infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 #timer { font-size: 13px; font-weight: 700; color: #f5a623; display: none; }
 #timer.show { display: block; }
 
+/* Toast floats over map near bottom */
+#toast {
+  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 500;
+  background: rgba(0,0,0,.88); color: #fff;
+  border-radius: 20px; padding: 10px 20px; font-size: 14px; font-weight: 600;
+  opacity: 0; pointer-events: none; transition: opacity .25s;
+  max-width: 88%; text-align: center; white-space: normal;
+}
+#toast.show { opacity: 1; }
+
+/* Bottom bar — OUTSIDE the map, always visible, never overlaps */
 #bottom {
-  position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
-  padding: 16px 16px 60px;
-  background: linear-gradient(0deg, rgba(0,0,0,.95) 60%, transparent);
+  flex-shrink: 0;
   display: flex; gap: 12px;
+  padding: 12px 16px env(safe-area-inset-bottom, 20px);
+  background: #0a0a0a;
+  border-top: 1px solid #1a1a1a;
 }
 #trackBtn {
-  flex: 1; padding: 20px; border: none; border-radius: 16px; cursor: pointer;
-  font-size: 17px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
+  flex: 1; padding: 18px; border: none; border-radius: 14px; cursor: pointer;
+  font-size: 16px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
   background: #f5a623; color: #000; transition: transform .1s, background .2s;
+  min-height: 60px;
 }
 #trackBtn:active { transform: scale(.97); }
 #trackBtn.stop { background: #e03b3b; color: #fff; }
 
 #pinBtn {
-  width: 70px; padding: 20px 0; border: none; border-radius: 16px; cursor: pointer;
-  font-size: 26px; background: #1a1a1a; border: 2px solid #333;
+  width: 64px; min-height: 60px; border: none; border-radius: 14px; cursor: pointer;
+  font-size: 24px; background: #1a1a1a; border: 1.5px solid #2a2a2a;
   display: none; align-items: center; justify-content: center;
-  transition: transform .1s, background .2s; flex-shrink: 0;
+  flex-shrink: 0; transition: transform .1s, background .15s;
 }
 #pinBtn:active { transform: scale(.97); background: #222; }
 #pinBtn.show { display: flex; }
 
-#toast {
-  position: absolute; bottom: 140px; left: 50%; transform: translateX(-50%);
-  z-index: 1000; background: rgba(0,0,0,.85); color: #fff;
-  border-radius: 20px; padding: 10px 20px; font-size: 14px; font-weight: 600;
-  white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .25s;
-  max-width: 90vw; white-space: normal; text-align: center;
-}
-#toast.show { opacity: 1; }
-
+/* Pin sheet overlay — covers everything */
 #sheet-bg {
-  position: absolute; inset: 0; z-index: 2000;
-  background: rgba(0,0,0,.5); backdrop-filter: blur(4px);
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
   display: none; align-items: flex-end;
 }
 #sheet-bg.open { display: flex; }
 #sheet {
   width: 100%; background: #1a1a1a; border-radius: 24px 24px 0 0;
-  padding: 12px 20px 48px; animation: up .2s ease;
+  padding: 12px 20px env(safe-area-inset-bottom, 32px);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 32px);
+  animation: up .2s ease;
   border-top: 1px solid rgba(255,255,255,.1);
 }
 @keyframes up { from{transform:translateY(30px);opacity:0} to{transform:none;opacity:1} }
-.drag-handle { width: 40px; height: 4px; background: #444; border-radius: 2px; margin: 0 auto 18px; }
+.drag-handle { width: 40px; height: 4px; background: #333; border-radius: 2px; margin: 0 auto 16px; }
 .sheet-title { font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 4px; }
-.sheet-addr { font-size: 13px; color: #888; margin-bottom: 16px; min-height: 18px; }
-.status-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.sheet-addr { font-size: 13px; color: #777; margin-bottom: 14px; min-height: 18px; }
+.status-row { display: flex; gap: 7px; margin-bottom: 14px; flex-wrap: wrap; }
 .stag {
-  padding: 8px 14px; border-radius: 20px; font-size: 13px; font-weight: 700;
-  border: 1.5px solid #333; color: #888; cursor: pointer; transition: all .15s;
+  padding: 8px 13px; border-radius: 20px; font-size: 13px; font-weight: 700;
+  border: 1.5px solid #2a2a2a; cursor: pointer; transition: all .15s;
 }
-.stag.sel { background: rgba(255,255,255,.08); }
-.stag[data-s="Dropped Lit"]    { --c:#f5a623; }
-.stag[data-s="No Answer"]      { --c:#888; }
-.stag[data-s="Spoke to Owner"] { --c:#4a9eff; }
-.stag[data-s="Interested"]     { --c:#00c9a7; }
-.stag[data-s="Appointment"]    { --c:#a855f7; }
-.stag { color: var(--c); }
-.stag.sel { border-color: var(--c); }
+.stag[data-s="Dropped Lit"]    { color: #f5a623; }
+.stag[data-s="No Answer"]      { color: #777; }
+.stag[data-s="Spoke to Owner"] { color: #4a9eff; }
+.stag[data-s="Interested"]     { color: #00c9a7; }
+.stag[data-s="Appointment"]    { color: #a855f7; }
+.stag.sel { background: rgba(255,255,255,.07); border-color: currentColor; }
 textarea {
-  width: 100%; background: #111; border: 1px solid #333; border-radius: 12px;
+  width: 100%; background: #111; border: 1px solid #2a2a2a; border-radius: 12px;
   color: #fff; font-family: inherit; font-size: 15px; padding: 12px 14px;
-  resize: none; height: 80px; outline: none; margin-bottom: 14px;
+  resize: none; height: 76px; outline: none; margin-bottom: 14px;
 }
-textarea::placeholder { color: #555; }
+textarea::placeholder { color: #444; }
 textarea:focus { border-color: #f5a623; }
 .sheet-btns { display: flex; gap: 10px; }
-.btn-save { flex:1; padding:16px; background:#f5a623; color:#000; border:none; border-radius:14px; font-size:16px; font-weight:800; cursor:pointer; }
-.btn-cancel { padding:16px 20px; background:#222; color:#888; border:none; border-radius:14px; font-size:15px; cursor:pointer; }
+.btn-save { flex:1; padding:15px; background:#f5a623; color:#000; border:none; border-radius:13px; font-size:16px; font-weight:800; cursor:pointer; }
+.btn-cancel { padding:15px 18px; background:#222; color:#777; border:none; border-radius:13px; font-size:15px; cursor:pointer; }
 
-.you-dot { width:14px; height:14px; border-radius:50%; background:#4a9eff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(74,158,255,.25); }
+/* Markers */
+.you-dot { width:14px; height:14px; border-radius:50%; background:#4a9eff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(74,158,255,.2); }
 .pin-dot { width:13px; height:13px; border-radius:50% 50% 50% 0; border:2px solid #fff; transform:rotate(-45deg); box-shadow:0 2px 8px rgba(0,0,0,.5); }
 
-.leaflet-popup-content-wrapper { background:#1a1a1a; color:#fff; border-radius:12px; border:1px solid #333; box-shadow:0 4px 20px rgba(0,0,0,.6); }
+.leaflet-popup-content-wrapper { background:#1a1a1a; color:#fff; border-radius:12px; border:1px solid #2a2a2a; box-shadow:0 4px 20px rgba(0,0,0,.6); }
 .leaflet-popup-tip { background:#1a1a1a; }
 .leaflet-popup-content { margin:12px 14px; }
 </style>
 </head>
 <body>
-<div id="map"></div>
 
-<div id="toppill">
-  <div class="logo">Canvass<span>Track</span></div>
-  <div id="dot"></div>
-  <div id="timer"></div>
+<!-- Map area -->
+<div id="map-wrap">
+  <div id="map"></div>
+  <div id="toppill">
+    <div class="logo">Canvass<span>Track</span></div>
+    <div id="dot"></div>
+    <div id="timer"></div>
+  </div>
+  <div id="toast"></div>
 </div>
 
-<div id="toast"></div>
-
+<!-- Button bar — lives outside the map, always visible -->
 <div id="bottom">
   <button id="trackBtn">▶ Start Tracking</button>
   <button id="pinBtn">📍</button>
 </div>
 
+<!-- Pin sheet -->
 <div id="sheet-bg">
   <div id="sheet">
     <div class="drag-handle"></div>
@@ -143,7 +167,7 @@ textarea:focus { border-color: #f5a623; }
 
 <script>
 const STATUS_COLORS = {
-  'Dropped Lit':'#f5a623','No Answer':'#888','Spoke to Owner':'#4a9eff',
+  'Dropped Lit':'#f5a623','No Answer':'#777','Spoke to Owner':'#4a9eff',
   'Interested':'#00c9a7','Appointment':'#a855f7'
 };
 const SESSION_COLORS = ['#f5a623','#00c9a7','#4a9eff','#e03b3b','#a855f7','#f97316'];
@@ -166,8 +190,11 @@ map = L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19}).addTo(map);
 L.control.zoom({position:'bottomright'}).addTo(map);
 
-// Tap map to pin
+// Tap map to drop pin while tracking
 map.on('click', e => { if (tracking) openSheet(e.latlng); });
+
+// Invalidate map size when layout changes
+window.addEventListener('resize', () => map.invalidateSize());
 
 // Toast
 let tTimer;
@@ -177,7 +204,7 @@ function toast(msg, ms=2500) {
   clearTimeout(tTimer); tTimer=setTimeout(()=>el.classList.remove('show'),ms);
 }
 
-// Load
+// Load saved data
 async function load() {
   try {
     [sessions,pins]=await Promise.all([api.get('/api/sessions'),api.get('/api/pins')]);
@@ -215,7 +242,7 @@ function setYou(lat,lng) {
   youMarker=L.marker([lat,lng],{icon,zIndexOffset:1000}).addTo(map);
 }
 
-// Tracking
+// ── Tracking ──────────────────────────────────────────────────────
 document.getElementById('trackBtn').addEventListener('click',()=>{ tracking?stopT():startT(); });
 
 function startT() {
@@ -239,7 +266,7 @@ function startT() {
     map.setView([lat,lng],16);
     setYou(lat,lng);
     watchId=navigator.geolocation.watchPosition(onPos,onPosErr,{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
-    toast('Tracking — tap map to drop a pin');
+    toast('Tracking — tap map or 📍 to drop a pin');
   },err=>{
     const m={1:'Location denied — check Settings → Privacy → Location',2:'GPS unavailable',3:'GPS timed out — try again'};
     toast(m[err.code]||'GPS error',4000);
@@ -278,7 +305,7 @@ async function stopT(){
     if(curLine)allLines.push(curLine);
     toast(`Route saved — ${curSession.coords.length} points`);
   }
-  tracking=false;curSession=null;curLine=null;startTime=null;
+  tracking=false;curSession=null;curLine=null;startTime=null;coordBuffer=[];
   document.getElementById('trackBtn').textContent='▶ Start Tracking';
   document.getElementById('trackBtn').classList.remove('stop');
   document.getElementById('dot').classList.remove('on');
@@ -293,19 +320,21 @@ function tickTimer(){
   document.getElementById('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 }
 
-// Pin button — uses current GPS position
-document.getElementById('pinBtn').addEventListener('click', () => {
-  if (!tracking) return;
-  if (youMarker) {
+// ── Pin button — uses your current GPS location ───────────────────
+document.getElementById('pinBtn').addEventListener('click',()=>{
+  if(!tracking)return;
+  if(youMarker){
     openSheet(youMarker.getLatLng());
   } else {
-    navigator.geolocation.getCurrentPosition(pos => {
-      openSheet({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-    }, () => toast('Could not get location', 3000), { enableHighAccuracy: true, timeout: 8000 });
+    navigator.geolocation.getCurrentPosition(
+      pos=>openSheet({lat:pos.coords.latitude,lng:pos.coords.longitude}),
+      ()=>toast('Could not get location',3000),
+      {enableHighAccuracy:true,timeout:8000}
+    );
   }
 });
 
-// Pin sheet
+// ── Pin sheet ─────────────────────────────────────────────────────
 function openSheet(latlng){
   pendingLL=latlng; selStatus='';
   document.getElementById('notes').value='';
@@ -338,8 +367,10 @@ document.getElementById('btn-save').addEventListener('click',async()=>{
     notes:document.getElementById('notes').value.trim(),
     sessionId:curSession?curSession.id:null
   };
-  try{const saved=await api.post('/api/pins',pin);pins.push(saved);renderPin(saved);toast('Pin saved ✓');}
-  catch(e){toast('Could not save — check connection',3000);}
+  try{
+    const saved=await api.post('/api/pins',pin);
+    pins.push(saved); renderPin(saved); toast('Pin saved ✓');
+  }catch(e){toast('Could not save — check connection',3000);}
   document.getElementById('sheet-bg').classList.remove('open'); pendingLL=null;
 });
 
@@ -349,6 +380,7 @@ document.getElementById('sheet-bg').addEventListener('click',e=>{
   }
 });
 
+// ── Reverse geocode ───────────────────────────────────────────────
 async function reverseGeocode(lat,lng){
   try{
     const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,{headers:{'Accept-Language':'en'}});

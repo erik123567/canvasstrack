@@ -40,6 +40,15 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, sans-
 #trackBtn:active { transform: scale(.97); }
 #trackBtn.stop { background: #e03b3b; color: #fff; }
 
+#pinBtn {
+  width: 70px; padding: 20px 0; border: none; border-radius: 16px; cursor: pointer;
+  font-size: 26px; background: #1a1a1a; border: 2px solid #333;
+  display: none; align-items: center; justify-content: center;
+  transition: transform .1s, background .2s; flex-shrink: 0;
+}
+#pinBtn:active { transform: scale(.97); background: #222; }
+#pinBtn.show { display: flex; }
+
 #toast {
   position: absolute; bottom: 140px; left: 50%; transform: translateX(-50%);
   z-index: 1000; background: rgba(0,0,0,.85); color: #fff;
@@ -109,6 +118,7 @@ textarea:focus { border-color: #f5a623; }
 
 <div id="bottom">
   <button id="trackBtn">▶ Start Tracking</button>
+  <button id="pinBtn">📍</button>
 </div>
 
 <div id="sheet-bg">
@@ -223,6 +233,7 @@ function startT() {
     document.getElementById('trackBtn').classList.add('stop');
     document.getElementById('dot').classList.add('on');
     document.getElementById('timer').classList.add('show');
+    document.getElementById('pinBtn').classList.add('show');
     startTime=Date.now();
     timerInt=setInterval(tickTimer,1000);
     map.setView([lat,lng],16);
@@ -273,6 +284,7 @@ async function stopT(){
   document.getElementById('dot').classList.remove('on');
   document.getElementById('timer').classList.remove('show');
   document.getElementById('timer').textContent='';
+  document.getElementById('pinBtn').classList.remove('show');
 }
 
 function tickTimer(){
@@ -280,6 +292,18 @@ function tickTimer(){
   const s=Math.floor((Date.now()-startTime)/1000);
   document.getElementById('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 }
+
+// Pin button — uses current GPS position
+document.getElementById('pinBtn').addEventListener('click', () => {
+  if (!tracking) return;
+  if (youMarker) {
+    openSheet(youMarker.getLatLng());
+  } else {
+    navigator.geolocation.getCurrentPosition(pos => {
+      openSheet({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    }, () => toast('Could not get location', 3000), { enableHighAccuracy: true, timeout: 8000 });
+  }
+});
 
 // Pin sheet
 function openSheet(latlng){

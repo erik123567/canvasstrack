@@ -245,6 +245,51 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 .detail-edit { flex: 1; padding: 15px; background: #f5a623; color: #000; border: none; border-radius: 12px; font-size: 16px; font-weight: 800; cursor: pointer; }
 .detail-delete { padding: 15px 18px; background: transparent; border: 1px solid #3a1a1a; color: #e03b3b; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
 
+
+/* ── Pin Drop Mode ── */
+#pin-crosshair {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) translateY(-20px);
+  z-index: 250;
+  pointer-events: none;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+}
+#pin-crosshair.active { display: flex; }
+#pin-crosshair svg {
+  width: 52px; height: 52px;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,.8));
+}
+#pin-crosshair-stem {
+  width: 3px; height: 16px;
+  background: linear-gradient(#f5a623, transparent);
+  border-radius: 2px;
+}
+
+#pin-confirm-bar {
+  position: fixed;
+  bottom: 100px; left: 16px; right: 16px;
+  z-index: 350;
+  display: none;
+  gap: 10px;
+}
+#pin-confirm-bar.active { display: flex; }
+#pin-confirm-btn {
+  flex: 1; padding: 16px; border: none; border-radius: 14px;
+  background: #f5a623; color: #000;
+  font-size: 16px; font-weight: 900; letter-spacing: .5px;
+  cursor: pointer; transition: transform .1s;
+}
+#pin-confirm-btn:active { transform: scale(.97); }
+#pin-cancel-btn {
+  width: 56px; padding: 16px; border: none; border-radius: 14px;
+  background: #1c1c1c; border: 1.5px solid #2c2c2c;
+  color: #888; font-size: 20px; cursor: pointer;
+}
+#pin-cancel-btn:active { transform: scale(.97); }
+
 .you-ring { width:16px; height:16px; border-radius:50%; background:#0066ff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(0,102,255,.3),0 2px 8px rgba(0,0,0,.5); }
 .pin-drop { width:14px; height:14px; border-radius:50% 50% 50% 0; border:2.5px solid #fff; transform:rotate(-45deg); box-shadow:0 3px 10px rgba(0,0,0,.7); }
 .leaflet-popup-content-wrapper { background:#161616; color:#fff; border-radius:12px; border:1px solid #252525; box-shadow:0 6px 24px rgba(0,0,0,.7); }
@@ -263,6 +308,26 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 <div id="toast"></div>
 
 <button id="follow-btn" title="Re-center on my location">◎</button>
+
+
+<!-- Pin drop crosshair -->
+<div id="pin-crosshair">
+  <svg viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="26" cy="26" r="10" stroke="#f5a623" stroke-width="2.5"/>
+    <line x1="26" y1="4"  x2="26" y2="14" stroke="#f5a623" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="26" y1="38" x2="26" y2="48" stroke="#f5a623" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="4"  y1="26" x2="14" y2="26" stroke="#f5a623" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="38" y1="26" x2="48" y2="26" stroke="#f5a623" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="26" cy="26" r="3" fill="#f5a623"/>
+  </svg>
+  <div id="pin-crosshair-stem"></div>
+</div>
+
+<!-- Pin drop confirm bar -->
+<div id="pin-confirm-bar">
+  <button id="pin-cancel-btn">✕</button>
+  <button id="pin-confirm-btn">📍 Log this stop</button>
+</div>
 
 <div id="bottom">
   <button class="icon-btn" id="historyBtn">📋</button>
@@ -380,7 +445,7 @@ let followMode=true; // auto-center map on user while tracking
 map=L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
 addSatTiles(map);
 L.control.zoom({position:'topright'}).addTo(map);
-map.on('click',e=>{if(tracking)openSheet(e.latlng,null);});
+// map click disabled — use pin button flow
 map.on('dragstart',()=>{ if(tracking){ followMode=false; showFollowBtn(true); } });
 
 function addSatTiles(m){
@@ -586,13 +651,46 @@ function tickTimer(){
   document.getElementById('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 }
 
+// ── Pin Drop Mode ────────────────────────────────────────────────
+let dropMode = false;
+
+function enterDropMode(){
+  dropMode = true;
+  document.getElementById('pin-crosshair').classList.add('active');
+  document.getElementById('pin-confirm-bar').classList.add('active');
+  document.getElementById('pinBtn').style.background = '#f5a623';
+  document.getElementById('pinBtn').style.color = '#000';
+  document.getElementById('pinBtn').textContent = '📍';
+  followMode = false; // pause auto-follow so map stays still
+  toast('Drag map to the house, then tap Log', 3500);
+}
+
+function exitDropMode(){
+  dropMode = false;
+  document.getElementById('pin-crosshair').classList.remove('active');
+  document.getElementById('pin-confirm-bar').classList.remove('active');
+  document.getElementById('pinBtn').style.background = '';
+  document.getElementById('pinBtn').style.color = '';
+  document.getElementById('pinBtn').textContent = '📍';
+  followMode = true;
+  showFollowBtn(false);
+}
+
 document.getElementById('pinBtn').addEventListener('click',()=>{
-  if(!tracking)return;
-  if(youMarker)openSheet(youMarker.getLatLng(),null);
-  else navigator.geolocation.getCurrentPosition(
-    p=>openSheet({lat:p.coords.latitude,lng:p.coords.longitude},null),
-    ()=>toast('Could not get location'),{enableHighAccuracy:true,timeout:8000}
-  );
+  if(!tracking) return;
+  if(dropMode){ exitDropMode(); return; }
+  enterDropMode();
+});
+
+document.getElementById('pin-cancel-btn').addEventListener('click',()=>{
+  exitDropMode();
+  toast('Pin cancelled');
+});
+
+document.getElementById('pin-confirm-btn').addEventListener('click',()=>{
+  const center = map.getCenter();
+  exitDropMode();
+  openSheet({ lat: center.lat, lng: center.lng }, null);
 });
 
 // ── Photo ─────────────────────────────────────────────────────────

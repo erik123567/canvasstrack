@@ -294,7 +294,10 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   <div id="detail-sheet">
     <img id="detail-photo" src="" alt="roof photo"/>
     <div class="detail-body">
-      <div class="detail-handle"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="detail-handle" style="margin:0"></div>
+        <button id="detail-close-btn" style="width:32px;height:32px;border-radius:50%;background:#222;border:1px solid #2a2a2a;color:#888;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
+      </div>
       <div class="detail-top">
         <div class="detail-addr" id="detail-addr"></div>
         <span class="detail-badge" id="detail-badge"></span>
@@ -413,7 +416,27 @@ function renderAll(){
 
 function drawPin(pin){
   const c=STATUS_COLORS[pin.status]||'#f5a623';
-  const icon=L.divIcon({html:`<div class="pin-drop" style="background:${c}"></div>`,iconSize:[14,14],iconAnchor:[7,14],className:''});
+  let iconHtml, iconSize, iconAnchor;
+  if(pin.photo){
+    // Show circular thumbnail above a pin stem
+    iconHtml=`
+      <div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
+        <div style="
+          width:44px;height:44px;border-radius:50%;
+          border:3px solid ${c};
+          background:url('${pin.photo}') center/cover;
+          box-shadow:0 3px 10px rgba(0,0,0,.7);
+          flex-shrink:0;
+        "></div>
+        <div style="width:3px;height:8px;background:${c};border-radius:0 0 2px 2px;margin-top:-1px"></div>
+        <div style="width:7px;height:7px;border-radius:50%;background:${c};margin-top:-2px;box-shadow:0 2px 4px rgba(0,0,0,.5)"></div>
+      </div>`;
+    iconSize=[44,62];iconAnchor=[22,62];
+  } else {
+    iconHtml=`<div class="pin-drop" style="background:${c}"></div>`;
+    iconSize=[14,14];iconAnchor=[7,14];
+  }
+  const icon=L.divIcon({html:iconHtml,iconSize,iconAnchor,className:''});
   const m=L.marker([pin.lat,pin.lng],{icon})
     .on('click',()=>openDetail(pin.id))
     .addTo(map);
@@ -460,11 +483,13 @@ function openDetail(pinId){
   document.getElementById('detail-bg').classList.add('open');
 }
 
+function closeDetail(){
+  document.getElementById('detail-bg').classList.remove('open');
+  detailPinId=null;
+}
+document.getElementById('detail-close-btn').addEventListener('click', closeDetail);
 document.getElementById('detail-bg').addEventListener('click',e=>{
-  if(e.target===document.getElementById('detail-bg')){
-    document.getElementById('detail-bg').classList.remove('open');
-    detailPinId=null;
-  }
+  if(e.target===document.getElementById('detail-bg')) closeDetail();
 });
 
 document.getElementById('detail-edit-btn').addEventListener('click',()=>{

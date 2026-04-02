@@ -61,6 +61,7 @@ try { db.exec(`ALTER TABLE pins ADD COLUMN photo TEXT`); } catch(e) {}
 const createUser    = db.prepare(`INSERT INTO users (id, name, email, password, created_at) VALUES (?, ?, ?, ?, ?)`);
 const getUserByEmail = db.prepare(`SELECT * FROM users WHERE email = ?`);
 const getUserById   = db.prepare(`SELECT id, name, email, created_at FROM users WHERE id = ?`);
+const updatePassword = db.prepare(`UPDATE users SET password = ? WHERE id = ?`);
 
 // ── Sessions ───────────────────────────────────────────────────────
 const createSession = db.prepare(`INSERT INTO sessions (id, user_id, color, started_at) VALUES (?, ?, ?, ?)`);
@@ -97,6 +98,7 @@ module.exports = {
     createUser.run(id, name, email, hashedPassword, new Date().toISOString()),
   getUserByEmail: (email) => getUserByEmail.get(email),
   getUserById:    (id)    => getUserById.get(id),
+  updatePassword: (id, hashed) => updatePassword.run(hashed, id),
 
   // Sessions
   createSession: (id, userId, color) => createSession.run(id, userId, color, new Date().toISOString()),

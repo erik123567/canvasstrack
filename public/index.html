@@ -211,6 +211,40 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 #follow-btn.show { display: flex; }
 #follow-btn:active { transform: scale(.93); }
 
+
+/* ── Pin Detail Sheet ── */
+#detail-bg {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(5px);
+  display: none; align-items: flex-end;
+}
+#detail-bg.open { display: flex; }
+#detail-sheet {
+  width: 100%; background: #161616; border-radius: 22px 22px 0 0;
+  border-top: 1px solid rgba(255,255,255,.08);
+  max-height: 88vh; overflow-y: auto;
+  animation: slideup .22s ease;
+}
+#detail-photo {
+  width: 100%; max-height: 240px; object-fit: cover;
+  border-radius: 22px 22px 0 0; display: none;
+}
+#detail-photo.show { display: block; }
+.detail-body { padding: 18px 18px 48px; }
+.detail-handle { width: 36px; height: 4px; background: #2a2a2a; border-radius: 2px; margin: 0 auto 16px; }
+.detail-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.detail-addr { font-size: 19px; font-weight: 800; flex: 1; line-height: 1.25; }
+.detail-badge {
+  font-size: 11px; font-weight: 800; padding: 5px 11px;
+  border-radius: 12px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .5px;
+  margin-top: 2px;
+}
+.detail-notes { font-size: 15px; color: #888; margin: 12px 0 16px; line-height: 1.5; }
+.detail-meta { font-size: 12px; color: #3a3a3a; margin-bottom: 24px; }
+.detail-btns { display: flex; gap: 10px; }
+.detail-edit { flex: 1; padding: 15px; background: #f5a623; color: #000; border: none; border-radius: 12px; font-size: 16px; font-weight: 800; cursor: pointer; }
+.detail-delete { padding: 15px 18px; background: transparent; border: 1px solid #3a1a1a; color: #e03b3b; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
+
 .you-ring { width:16px; height:16px; border-radius:50%; background:#0066ff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(0,102,255,.3),0 2px 8px rgba(0,0,0,.5); }
 .pin-drop { width:14px; height:14px; border-radius:50% 50% 50% 0; border:2.5px solid #fff; transform:rotate(-45deg); box-shadow:0 3px 10px rgba(0,0,0,.7); }
 .leaflet-popup-content-wrapper { background:#161616; color:#fff; border-radius:12px; border:1px solid #252525; box-shadow:0 6px 24px rgba(0,0,0,.7); }
@@ -251,6 +285,27 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   <div id="coverage-wrap">
     <div id="coverage-map"></div>
     <div class="coverage-hint">All routes — find uncovered streets</div>
+  </div>
+</div>
+
+
+<!-- Pin Detail Sheet -->
+<div id="detail-bg">
+  <div id="detail-sheet">
+    <img id="detail-photo" src="" alt="roof photo"/>
+    <div class="detail-body">
+      <div class="detail-handle"></div>
+      <div class="detail-top">
+        <div class="detail-addr" id="detail-addr"></div>
+        <span class="detail-badge" id="detail-badge"></span>
+      </div>
+      <div class="detail-notes" id="detail-notes"></div>
+      <div class="detail-meta" id="detail-meta"></div>
+      <div class="detail-btns">
+        <button class="detail-edit" id="detail-edit-btn">✏️ Edit</button>
+        <button class="detail-delete" id="detail-delete-btn">🗑 Delete</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -359,35 +414,81 @@ function renderAll(){
 function drawPin(pin){
   const c=STATUS_COLORS[pin.status]||'#f5a623';
   const icon=L.divIcon({html:`<div class="pin-drop" style="background:${c}"></div>`,iconSize:[14,14],iconAnchor:[7,14],className:''});
-  const photoHtml=pin.photo?`<img src="${pin.photo}" style="width:100%;max-height:120px;object-fit:cover;border-radius:8px;margin-top:6px;display:block"/>`:'';
   const m=L.marker([pin.lat,pin.lng],{icon})
-    .bindPopup(`
-      <div style="min-width:150px;max-width:220px">
-        <b style="font-size:14px">${pin.address||'Stop'}</b><br>
-        <span style="color:${c};font-weight:700;font-size:12px">${pin.status||'–'}</span>
-        ${pin.notes?`<br><span style="color:#999;font-size:12px">${pin.notes}</span>`:''}
-        ${photoHtml}
-        <br><span onclick="editPinFromMap('${pin.id}')" style="color:#f5a623;font-size:12px;font-weight:700;cursor:pointer;margin-top:6px;display:inline-block">✏️ Edit</span>
-      </div>
-    `)
+    .on('click',()=>openDetail(pin.id))
     .addTo(map);
   allPinMarkers.push(m);
   return m;
 }
 
-// Called from popup "Edit" link
-window.editPinFromMap = (pinId) => {
-  const pin = pins.find(p=>p.id===pinId);
-  if(!pin)return;
-  map.closePopup();
-  openSheet({lat:pin.lat,lng:pin.lng},pin);
-};
+
 
 function setYou(lat,lng){
   if(youMarker)map.removeLayer(youMarker);
   const icon=L.divIcon({html:'<div class="you-ring"></div>',iconSize:[16,16],iconAnchor:[8,8],className:''});
   youMarker=L.marker([lat,lng],{icon,zIndexOffset:9999}).addTo(map);
 }
+
+
+// ── Pin Detail Sheet ─────────────────────────────────────────────
+let detailPinId = null;
+
+function openDetail(pinId){
+  const pin = pins.find(p=>p.id===pinId);
+  if(!pin) return;
+  detailPinId = pinId;
+  const c = STATUS_COLORS[pin.status]||'#f5a623';
+  const d = new Date(pin.created_at||Date.now());
+
+  document.getElementById('detail-addr').textContent = pin.address||'Unnamed stop';
+  const badge = document.getElementById('detail-badge');
+  badge.textContent = pin.status||'–';
+  badge.style.cssText = `background:${c}22;color:${c};border:1px solid ${c}44`;
+
+  const notesEl = document.getElementById('detail-notes');
+  notesEl.textContent = pin.notes||'';
+  notesEl.style.display = pin.notes ? 'block' : 'none';
+
+  document.getElementById('detail-meta').textContent =
+    d.toLocaleDateString('en-US',{weekday:'short',month:'long',day:'numeric'}) +
+    ' · ' + d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+
+  const photo = document.getElementById('detail-photo');
+  if(pin.photo){ photo.src=pin.photo; photo.classList.add('show'); }
+  else { photo.src=''; photo.classList.remove('show'); }
+
+  document.getElementById('detail-bg').classList.add('open');
+}
+
+document.getElementById('detail-bg').addEventListener('click',e=>{
+  if(e.target===document.getElementById('detail-bg')){
+    document.getElementById('detail-bg').classList.remove('open');
+    detailPinId=null;
+  }
+});
+
+document.getElementById('detail-edit-btn').addEventListener('click',()=>{
+  const pin=pins.find(p=>p.id===detailPinId);
+  if(!pin)return;
+  document.getElementById('detail-bg').classList.remove('open');
+  openSheet({lat:pin.lat,lng:pin.lng},pin);
+  detailPinId=null;
+});
+
+document.getElementById('detail-delete-btn').addEventListener('click',async()=>{
+  const pin=pins.find(p=>p.id===detailPinId);
+  if(!pin)return;
+  if(!confirm(`Delete this pin?\n${pin.address||'Unnamed stop'}`))return;
+  try{
+    await api.del(`/api/pins/${pin.id}`);
+    pins=pins.filter(p=>p.id!==pin.id);
+    renderAll();
+    if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
+    toast('Pin deleted');
+  }catch(e){toast('Could not delete',3000);}
+  document.getElementById('detail-bg').classList.remove('open');
+  detailPinId=null;
+});
 
 // ── Tracking ──────────────────────────────────────────────────────
 document.getElementById('trackBtn').addEventListener('click',()=>tracking?stopT():startT());

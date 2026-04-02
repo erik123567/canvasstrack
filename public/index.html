@@ -246,6 +246,58 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 .detail-delete { padding: 15px 18px; background: transparent; border: 1px solid #3a1a1a; color: #e03b3b; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
 
 
+
+/* ── Auth Screen ── */
+#auth-screen {
+  position: fixed; inset: 0; z-index: 1000;
+  background: #0a0a0a;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 32px 24px;
+}
+#auth-screen.hidden { display: none; }
+
+.auth-logo { font-size: 26px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #f5a623; margin-bottom: 4px; }
+.auth-logo span { color: #fff; }
+.auth-sub { font-size: 13px; color: #444; margin-bottom: 40px; letter-spacing: .5px; }
+
+.auth-card {
+  width: 100%; max-width: 360px;
+  background: #161616; border-radius: 20px;
+  border: 1px solid #222; padding: 24px;
+}
+.auth-tabs { display: flex; margin-bottom: 24px; background: #0d0d0d; border-radius: 10px; padding: 3px; }
+.auth-tab {
+  flex: 1; padding: 10px; text-align: center; font-size: 14px; font-weight: 700;
+  color: #444; cursor: pointer; border-radius: 8px; transition: all .2s;
+}
+.auth-tab.active { background: #f5a623; color: #000; }
+
+.auth-field { margin-bottom: 14px; }
+.auth-field label { display: block; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #444; margin-bottom: 6px; }
+.auth-field input {
+  width: 100%; background: #0d0d0d; border: 1px solid #252525; border-radius: 10px;
+  color: #fff; font-family: inherit; font-size: 16px; padding: 13px 14px; outline: none;
+  transition: border-color .2s; -webkit-appearance: none;
+}
+.auth-field input:focus { border-color: #f5a623; }
+
+.auth-btn {
+  width: 100%; padding: 15px; background: #f5a623; color: #000;
+  border: none; border-radius: 12px; font-size: 16px; font-weight: 900;
+  letter-spacing: .5px; cursor: pointer; margin-top: 6px;
+  transition: transform .1s;
+}
+.auth-btn:active { transform: scale(.98); }
+.auth-error { font-size: 13px; color: #e03b3b; text-align: center; margin-top: 12px; min-height: 18px; }
+
+/* User badge in top pill */
+#user-name-badge {
+  font-size: 11px; color: #888; cursor: pointer; padding: 2px 0;
+  pointer-events: all;
+}
+#user-name-badge:hover { color: #f5a623; }
+
 /* ── Pin Drop Mode ── */
 #pin-crosshair {
   position: fixed;
@@ -299,11 +351,42 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 </head>
 <body>
 
+
+<!-- Auth Screen -->
+<div id="auth-screen">
+  <div class="auth-logo">Canvass<span>Track</span></div>
+  <div class="auth-sub">Roofing Sales Canvassing</div>
+  <div class="auth-card">
+    <div class="auth-tabs">
+      <div class="auth-tab active" data-auth="login">Log In</div>
+      <div class="auth-tab" data-auth="register">Sign Up</div>
+    </div>
+
+    <!-- Login form -->
+    <div id="login-form">
+      <div class="auth-field"><label>Email</label><input type="email" id="login-email" placeholder="you@email.com" autocomplete="email"/></div>
+      <div class="auth-field"><label>Password</label><input type="password" id="login-password" placeholder="Password" autocomplete="current-password"/></div>
+      <button class="auth-btn" id="login-btn">Log In</button>
+    </div>
+
+    <!-- Register form -->
+    <div id="register-form" style="display:none">
+      <div class="auth-field"><label>Name</label><input type="text" id="reg-name" placeholder="Your name" autocomplete="name"/></div>
+      <div class="auth-field"><label>Email</label><input type="email" id="reg-email" placeholder="you@email.com" autocomplete="email"/></div>
+      <div class="auth-field"><label>Password</label><input type="password" id="reg-password" placeholder="Min. 6 characters" autocomplete="new-password"/></div>
+      <button class="auth-btn" id="register-btn">Create Account</button>
+    </div>
+
+    <div class="auth-error" id="auth-error"></div>
+  </div>
+</div>
+
 <div id="map"></div>
 <div id="toppill">
   <div class="logo">Canvass<span>Track</span></div>
   <div id="dot"></div>
   <div id="timer"></div>
+  <div id="user-name-badge"></div>
 </div>
 <div id="toast"></div>
 
@@ -425,11 +508,19 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 <script>
 const STATUS_COLORS={'Dropped Lit':'#f5a623','No Answer':'#666','Spoke to Owner':'#4a9eff','Interested':'#00c9a7','Appointment':'#a855f7'};
 const SESSION_COLORS=['#f5a623','#00c9a7','#4a9eff','#e03b3b','#a855f7','#f97316'];
+// Auth token stored in localStorage
+let authToken = localStorage.getItem('ct_token') || null;
+let currentUser = JSON.parse(localStorage.getItem('ct_user') || 'null');
+
+function authHeaders(extra={}) {
+  return { 'Content-Type': 'application/json', ...(authToken ? { 'Authorization': 'Bearer ' + authToken } : {}), ...extra };
+}
+
 const api={
-  get:   p    => fetch(p).then(r=>r.json()),
-  post:  (p,b)=> fetch(p,{method:'POST',  headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json()),
-  patch: (p,b)=> fetch(p,{method:'PATCH', headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(r=>r.json()),
-  del:   p    => fetch(p,{method:'DELETE'}).then(r=>r.json()),
+  get:   p    => fetch(p, { headers: authHeaders() }).then(r=>r.json()),
+  post:  (p,b)=> fetch(p,{method:'POST',  headers:authHeaders(), body:JSON.stringify(b)}).then(r=>r.json()),
+  patch: (p,b)=> fetch(p,{method:'PATCH', headers:authHeaders(), body:b?JSON.stringify(b):undefined}).then(r=>r.json()),
+  del:   p    => fetch(p,{method:'DELETE', headers:authHeaders()}).then(r=>r.json()),
 };
 
 let map,coverageMap,youMarker;
@@ -649,6 +740,109 @@ function tickTimer(){
   if(!startTime)return;
   const s=Math.floor((Date.now()-startTime)/1000);
   document.getElementById('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+
+// ── Auth ──────────────────────────────────────────────────────────
+function showAuthScreen(){ document.getElementById('auth-screen').classList.remove('hidden'); }
+function hideAuthScreen(){ document.getElementById('auth-screen').classList.add('hidden'); }
+
+function setUser(token, user){
+  authToken = token;
+  currentUser = user;
+  localStorage.setItem('ct_token', token);
+  localStorage.setItem('ct_user', JSON.stringify(user));
+  document.getElementById('user-name-badge').textContent = user.name;
+  hideAuthScreen();
+}
+
+function logout(){
+  if(!confirm('Log out?')) return;
+  authToken = null; currentUser = null;
+  localStorage.removeItem('ct_token');
+  localStorage.removeItem('ct_user');
+  showAuthScreen();
+}
+
+document.getElementById('user-name-badge').addEventListener('click', logout);
+
+// Tab switching
+document.querySelectorAll('.auth-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('login-form').style.display = tab.dataset.auth === 'login' ? 'block' : 'none';
+    document.getElementById('register-form').style.display = tab.dataset.auth === 'register' ? 'block' : 'none';
+    document.getElementById('auth-error').textContent = '';
+  });
+});
+
+// Login
+document.getElementById('login-btn').addEventListener('click', async () => {
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl    = document.getElementById('auth-error');
+  errEl.textContent = '';
+  if(!email || !password){ errEl.textContent = 'Please fill in all fields'; return; }
+  document.getElementById('login-btn').textContent = 'Logging in…';
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if(!res.ok){ errEl.textContent = data.error || 'Login failed'; }
+    else { setUser(data.token, data.user); load(); }
+  } catch(e) { errEl.textContent = 'Network error — try again'; }
+  document.getElementById('login-btn').textContent = 'Log In';
+});
+
+// Enter key on login
+['login-email','login-password'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if(e.key === 'Enter') document.getElementById('login-btn').click();
+  });
+});
+
+// Register
+document.getElementById('register-btn').addEventListener('click', async () => {
+  const name     = document.getElementById('reg-name').value.trim();
+  const email    = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const errEl    = document.getElementById('auth-error');
+  errEl.textContent = '';
+  if(!name || !email || !password){ errEl.textContent = 'Please fill in all fields'; return; }
+  document.getElementById('register-btn').textContent = 'Creating account…';
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name, email, password })
+    });
+    const data = await res.json();
+    if(!res.ok){ errEl.textContent = data.error || 'Registration failed'; }
+    else { setUser(data.token, data.user); load(); }
+  } catch(e) { errEl.textContent = 'Network error — try again'; }
+  document.getElementById('register-btn').textContent = 'Create Account';
+});
+
+// Check if already logged in on startup
+async function initAuth(){
+  if(authToken && currentUser){
+    try {
+      const res = await fetch('/api/auth/me', { headers: authHeaders() });
+      if(res.ok){
+        const user = await res.json();
+        setUser(authToken, user);
+        load();
+        return;
+      }
+    } catch(e) {}
+    // Token invalid — clear and show login
+    localStorage.removeItem('ct_token');
+    localStorage.removeItem('ct_user');
+    authToken = null; currentUser = null;
+  }
+  showAuthScreen();
 }
 
 // ── Pin Drop Mode ────────────────────────────────────────────────
@@ -965,7 +1159,7 @@ document.getElementById('follow-btn').addEventListener('click',()=>{
   }
 });
 
-load();
+initAuth();
 </script>
 </body>
 </html>

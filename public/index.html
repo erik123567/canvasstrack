@@ -198,6 +198,19 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 .bsave { flex:1; padding:15px; background:#f5a623; color:#000; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer; }
 .bcancel { padding:15px 18px; background:#1c1c1c; color:#555; border:none; border-radius:12px; font-size:15px; cursor:pointer; }
 
+/* Follow button */
+#follow-btn {
+  position: fixed; bottom: 100px; right: 16px; z-index: 300;
+  width: 48px; height: 48px; border-radius: 50%;
+  background: #0a0a0a; border: 2px solid #f5a623;
+  color: #f5a623; font-size: 20px; cursor: pointer;
+  display: none; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,.6);
+  transition: transform .1s;
+}
+#follow-btn.show { display: flex; }
+#follow-btn:active { transform: scale(.93); }
+
 .you-ring { width:16px; height:16px; border-radius:50%; background:#0066ff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(0,102,255,.3),0 2px 8px rgba(0,0,0,.5); }
 .pin-drop { width:14px; height:14px; border-radius:50% 50% 50% 0; border:2.5px solid #fff; transform:rotate(-45deg); box-shadow:0 3px 10px rgba(0,0,0,.7); }
 .leaflet-popup-content-wrapper { background:#161616; color:#fff; border-radius:12px; border:1px solid #252525; box-shadow:0 6px 24px rgba(0,0,0,.7); }
@@ -214,6 +227,8 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   <div id="timer"></div>
 </div>
 <div id="toast"></div>
+
+<button id="follow-btn" title="Re-center on my location">◎</button>
 
 <div id="bottom">
   <button class="icon-btn" id="historyBtn">📋</button>
@@ -301,12 +316,14 @@ let sessions=[],pins=[],allLines=[],allPinMarkers=[];
 let coordBuffer=[],pendingLL=null,selStatus='',pendingPhoto=null;
 let editingPin=null; // null = new pin, object = editing existing
 let histTab='routes',coverageMapInit=false;
+let followMode=true; // auto-center map on user while tracking
 
 // Map
 map=L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
 addSatTiles(map);
 L.control.zoom({position:'topright'}).addTo(map);
 map.on('click',e=>{if(tracking)openSheet(e.latlng,null);});
+map.on('dragstart',()=>{ if(tracking){ followMode=false; showFollowBtn(true); } });
 
 function addSatTiles(m){
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}).addTo(m);
@@ -393,6 +410,7 @@ function startT(){
     startTime=Date.now();timerInt=setInterval(tickTimer,1000);
     map.setView([lat,lng],16);setYou(lat,lng);
     watchId=navigator.geolocation.watchPosition(onPos,onPosErr,{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
+    followMode=true;
     toast('Tracking • tap map or 📍 to log a stop');
   },err=>{
     const m={1:'Location denied — Settings → Privacy → Location Services',2:'GPS unavailable',3:'GPS timed out'};
@@ -402,7 +420,9 @@ function startT(){
 
 function onPos(pos){
   const{latitude:lat,longitude:lng}=pos.coords;
-  setYou(lat,lng);if(!curSession)return;
+  setYou(lat,lng);
+  if(followMode) map.setView([lat,lng],map.getZoom(),{animate:true,duration:0.5});
+  if(!curSession)return;
   const coord={lat,lng,ts:new Date().toISOString()};
   curSession.coords.push(coord);curLine.addLatLng([lat,lng]);
   coordBuffer.push(coord);if(coordBuffer.length>=8)flushCoords();
@@ -431,6 +451,7 @@ async function stopT(){
   document.getElementById('timer').classList.remove('show');
   document.getElementById('timer').textContent='';
   document.getElementById('pinBtn').classList.remove('show');
+  followMode=true; showFollowBtn(false);
 }
 
 function tickTimer(){
@@ -706,6 +727,19 @@ async function reverseGeocode(lat,lng){
     return parts.join(', ')||'Unknown location';
   }catch(e){return 'Unknown location';}
 }
+
+// Follow button
+function showFollowBtn(show){
+  document.getElementById('follow-btn').classList.toggle('show', show);
+}
+document.getElementById('follow-btn').addEventListener('click',()=>{
+  followMode=true;
+  showFollowBtn(false);
+  if(youMarker){
+    const ll=youMarker.getLatLng();
+    map.setView([ll.lat,ll.lng],map.getZoom(),{animate:true});
+  }
+});
 
 load();
 </script>

@@ -133,6 +133,11 @@ const getImportedPins    = db.prepare(`
 `);
 const removeImportedRoute = db.prepare(`DELETE FROM imported_routes WHERE user_id = ? AND session_id = ?`);
 
+// ── Legacy migration ──────────────────────────────────────────────
+const migrateLegacySessions = db.prepare(`UPDATE sessions SET user_id = ? WHERE user_id = 'legacy'`);
+const migrateLegacyPins     = db.prepare(`UPDATE pins SET user_id = ? WHERE user_id = 'legacy'`);
+const countUserSessions     = db.prepare(`SELECT COUNT(*) as n FROM sessions WHERE user_id = ?`);
+
 module.exports = {
   // Users
   createUser: (id, name, email, hashedPassword) =>
@@ -161,6 +166,15 @@ module.exports = {
   ),
   getUserPins: (userId) => getUserPins.all(userId),
   deletePin:   (id, userId) => deletePin.run(id, userId),
+
+  // Legacy migration — runs once on first login if user has no sessions yet
+  migrateLegacyData: (userId) => {
+    const { n } = countUserSessions.get(userId);
+    if (n === 0) {
+      migrateLegacySessions.run(userId);
+      migrateLegacyPins.run(userId);
+    }
+  },
 
   // Shared routes
   createShareCode:  (code, sessionId, userId) => createShareCode.run(code, sessionId, userId, new Date().toISOString()),

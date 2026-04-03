@@ -167,13 +167,10 @@ module.exports = {
   getUserPins: (userId) => getUserPins.all(userId),
   deletePin:   (id, userId) => deletePin.run(id, userId),
 
-  // Legacy migration — runs once on first login if user has no sessions yet
+  // Legacy migration — assign any legacy data to this user
   migrateLegacyData: (userId) => {
-    const { n } = countUserSessions.get(userId);
-    if (n === 0) {
-      migrateLegacySessions.run(userId);
-      migrateLegacyPins.run(userId);
-    }
+    migrateLegacySessions.run(userId);
+    migrateLegacyPins.run(userId);
   },
 
   // Shared routes

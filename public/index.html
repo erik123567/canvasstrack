@@ -114,9 +114,9 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 .pin-thumb { width: 100%; max-height: 160px; object-fit: cover; border-radius: 10px; margin-bottom: 8px; display: block; }
 .pin-time { font-size: 11px; color: #333; }
 
-#coverage-wrap { flex: 1; position: relative; display: none; }
-#coverage-wrap.active { display: block; }
-#coverage-map { position: absolute; inset: 0; }
+#coverage-wrap { flex: 1; position: relative; display: none; min-height: 0; }
+#coverage-wrap.active { display: flex; flex-direction: column; }
+#coverage-map { flex: 1; min-height: 0; }
 .coverage-hint {
   position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
   z-index: 10; background: rgba(0,0,0,.8); color: #fff;
@@ -1143,7 +1143,7 @@ document.getElementById('login-btn').addEventListener('click', async () => {
     });
     const data = await res.json();
     if(!res.ok){ errEl.textContent = data.error || 'Login failed'; }
-    else { setUser(data.token, data.user); load(); }
+    else { setUser(data.token, data.user); sessions=[]; pins=[]; load(); }
   } catch(e) { errEl.textContent = 'Network error — try again'; }
   document.getElementById('login-btn').textContent = 'Log In';
 });
@@ -1171,7 +1171,7 @@ document.getElementById('register-btn').addEventListener('click', async () => {
     });
     const data = await res.json();
     if(!res.ok){ errEl.textContent = data.error || 'Registration failed'; }
-    else { setUser(data.token, data.user); load(); }
+    else { setUser(data.token, data.user); sessions=[]; pins=[]; load(); }
   } catch(e) { errEl.textContent = 'Network error — try again'; }
   document.getElementById('register-btn').textContent = 'Create Account';
 });
@@ -1404,7 +1404,7 @@ function renderHistTab(tab){
   const body=document.getElementById('hist-body');
   const cov=document.getElementById('coverage-wrap');
   if(tab==='coverage'){
-    body.style.display='none';cov.classList.add('active');initCoverageMap();return;
+    body.style.display='none';cov.classList.add('active');setTimeout(()=>{ initCoverageMap(); },50);return;
   }
   body.style.display='block';cov.classList.remove('active');
 
@@ -1503,7 +1503,7 @@ function initCoverageMap(){
           .addTo(coverageMap);
       });
       if(allCoords.length>0) coverageMap.fitBounds(L.latLngBounds(allCoords),{padding:[30,30]});
-      setTimeout(()=>coverageMap.invalidateSize(),100);
+      setTimeout(()=>{ coverageMap.invalidateSize(); }, 300);
     });
     return;
   }
@@ -1555,7 +1555,7 @@ function initCoverageMap(){
   });
   if(allCoords.length>0)coverageMap.fitBounds(L.latLngBounds(allCoords),{padding:[30,30]});
   else coverageMap.setView([38.85,-76.53],13);
-  setTimeout(()=>coverageMap.invalidateSize(),100);
+  setTimeout(()=>{ coverageMap.invalidateSize(); }, 300);
 }
 
 async function reverseGeocode(lat,lng){

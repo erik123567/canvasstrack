@@ -1110,7 +1110,8 @@ function setUser(token, user){
   currentUser = user;
   localStorage.setItem('ct_token', token);
   localStorage.setItem('ct_user', JSON.stringify(user));
-  document.getElementById('user-name-badge').textContent = user.name;
+  const badge = document.getElementById('user-name-badge');
+  if(badge) badge.textContent = user.name;
   loadImportedRoutes();
   hideAuthScreen();
 }

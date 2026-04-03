@@ -1,123 +1,1585 @@
-const Database = require('better-sqlite3');
-const path = require('path');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>CanvassTrack</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; }
+#map { position: fixed; top: 0; left: 0; right: 0; bottom: 88px; z-index: 1; }
 
-const db = new Database(process.env.DB_PATH || path.join(__dirname, 'canvasstrack.db'));
-db.pragma('journal_mode = WAL');
+#toppill {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 100; background: rgba(0,0,0,.82); backdrop-filter: blur(12px);
+  border-radius: 30px; padding: 10px 18px;
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid rgba(255,255,255,.13); white-space: nowrap; pointer-events: none;
+}
+.logo { font-size: 14px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #f5a623; }
+.logo span { color: #fff; }
+#dot { width: 8px; height: 8px; border-radius: 50%; background: #3a3a3a; transition: all .3s; }
+#dot.on { background: #f5a623; box-shadow: 0 0 7px #f5a623; animation: blink 1.3s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+#timer { font-size: 13px; font-weight: 700; color: #f5a623; display: none; }
+#timer.show { display: block; }
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
-    email      TEXT NOT NULL UNIQUE,
-    password   TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  );
+#toast {
+  position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+  z-index: 200; background: rgba(20,20,20,.92); color: #fff;
+  border-radius: 22px; padding: 10px 20px; font-size: 14px; font-weight: 600;
+  max-width: 88vw; text-align: center; white-space: normal;
+  opacity: 0; pointer-events: none; transition: opacity .25s;
+  border: 1px solid rgba(255,255,255,.1);
+}
+#toast.show { opacity: 1; }
 
-  CREATE TABLE IF NOT EXISTS sessions (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL,
-    color       TEXT NOT NULL,
-    started_at  TEXT NOT NULL,
-    ended_at    TEXT,
-    active      INTEGER DEFAULT 1,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  );
+#bottom {
+  position: fixed; bottom: 0; left: 0; right: 0; height: 88px; z-index: 300;
+  background: #0a0a0a; border-top: 1px solid #1c1c1c;
+  display: flex; align-items: center; gap: 10px; padding: 0 16px 8px;
+}
+#trackBtn {
+  flex: 1; height: 56px; border: none; border-radius: 14px; cursor: pointer;
+  font-size: 16px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
+  background: #f5a623; color: #000; transition: transform .1s, background .2s;
+}
+#trackBtn:active { transform: scale(.97); }
+#trackBtn.stop { background: #e03b3b; color: #fff; }
+.icon-btn {
+  width: 60px; height: 56px; border: none; border-radius: 14px; cursor: pointer;
+  font-size: 22px; background: #1c1c1c; border: 1.5px solid #2c2c2c;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: transform .1s;
+}
+.icon-btn:active { transform: scale(.95); }
+#pinBtn { display: none; }
+#pinBtn.show { display: flex; }
 
-  CREATE TABLE IF NOT EXISTS coords (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id  TEXT NOT NULL,
-    lat         REAL NOT NULL,
-    lng         REAL NOT NULL,
-    recorded_at TEXT NOT NULL,
-    FOREIGN KEY (session_id) REFERENCES sessions(id)
-  );
+/* ── History Panel ── */
+#hist-panel {
+  position: fixed; inset: 0; z-index: 400;
+  background: #0d0d0d; display: none; flex-direction: column;
+}
+#hist-panel.open { display: flex; }
+#hist-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 56px 20px 16px; border-bottom: 1px solid #1c1c1c; flex-shrink: 0;
+}
+.hist-title { font-size: 22px; font-weight: 900; }
+#hist-close {
+  width: 36px; height: 36px; border-radius: 50%; background: #1c1c1c;
+  border: none; color: #888; font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+#hist-tabs { display: flex; border-bottom: 1px solid #1c1c1c; flex-shrink: 0; }
+.htab {
+  flex: 1; padding: 14px 8px; text-align: center;
+  font-size: 13px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  color: #444; cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s;
+}
+.htab.active { color: #f5a623; border-bottom-color: #f5a623; }
+#hist-body { flex: 1; overflow-y: auto; padding: 16px; }
 
-  CREATE TABLE IF NOT EXISTS pins (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL,
-    session_id  TEXT,
-    lat         REAL NOT NULL,
-    lng         REAL NOT NULL,
-    address     TEXT,
-    status      TEXT DEFAULT 'Dropped Lit',
-    notes       TEXT,
-    photo       TEXT,
-    created_at  TEXT NOT NULL,
-    FOREIGN KEY (user_id)    REFERENCES users(id),
-    FOREIGN KEY (session_id) REFERENCES sessions(id)
-  );
+.route-card {
+  background: #161616; border: 1px solid #222; border-radius: 14px;
+  padding: 14px 16px; margin-bottom: 10px; cursor: pointer;
+  display: flex; align-items: center; gap: 14px; transition: border-color .15s;
+}
+.route-card:active { border-color: #f5a623; }
+.route-swatch { width: 10px; height: 44px; border-radius: 5px; flex-shrink: 0; }
+.route-info { flex: 1; }
+.route-date { font-size: 14px; font-weight: 700; }
+.route-meta { font-size: 12px; color: #444; margin-top: 3px; }
 
-  CREATE INDEX IF NOT EXISTS idx_coords_session  ON coords(session_id);
-  CREATE INDEX IF NOT EXISTS idx_pins_user       ON pins(user_id);
-  CREATE INDEX IF NOT EXISTS idx_sessions_user   ON sessions(user_id);
-`);
+.pin-card {
+  background: #161616; border: 1px solid #222; border-radius: 14px;
+  padding: 13px 15px; margin-bottom: 10px;
+}
+.pin-top { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 6px; }
+.pin-addr { font-size: 14px; font-weight: 700; flex: 1; }
+.pin-badge {
+  font-size: 11px; font-weight: 800; padding: 4px 10px;
+  border-radius: 12px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .5px;
+}
+.pin-edit-btn {
+  width: 32px; height: 32px; border-radius: 8px; background: #222; border: 1px solid #2a2a2a;
+  color: #666; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all .15s;
+}
+.pin-edit-btn:active { background: #2a2a2a; color: #f5a623; }
+.pin-notes { font-size: 13px; color: #555; margin-bottom: 8px; }
+.pin-thumb { width: 100%; max-height: 160px; object-fit: cover; border-radius: 10px; margin-bottom: 8px; display: block; }
+.pin-time { font-size: 11px; color: #333; }
 
-// Migrate existing tables if upgrading from no-auth version
-try { db.exec(`ALTER TABLE sessions ADD COLUMN user_id TEXT NOT NULL DEFAULT 'legacy'`); } catch(e) {}
-try { db.exec(`ALTER TABLE pins ADD COLUMN user_id TEXT NOT NULL DEFAULT 'legacy'`); } catch(e) {}
-try { db.exec(`ALTER TABLE pins ADD COLUMN photo TEXT`); } catch(e) {}
+#coverage-wrap { flex: 1; position: relative; display: none; }
+#coverage-wrap.active { display: block; }
+#coverage-map { position: absolute; inset: 0; }
+.coverage-hint {
+  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 10; background: rgba(0,0,0,.8); color: #fff;
+  padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  white-space: nowrap; pointer-events: none;
+}
 
-// ── Users ──────────────────────────────────────────────────────────
-const createUser    = db.prepare(`INSERT INTO users (id, name, email, password, created_at) VALUES (?, ?, ?, ?, ?)`);
-const getUserByEmail = db.prepare(`SELECT * FROM users WHERE email = ?`);
-const getUserById   = db.prepare(`SELECT id, name, email, created_at FROM users WHERE id = ?`);
-const updatePassword = db.prepare(`UPDATE users SET password = ? WHERE id = ?`);
+.empty-state { text-align: center; padding: 60px 20px; color: #333; }
+.empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-text { font-size: 15px; line-height: 1.6; }
 
-// ── Sessions ───────────────────────────────────────────────────────
-const createSession = db.prepare(`INSERT INTO sessions (id, user_id, color, started_at) VALUES (?, ?, ?, ?)`);
-const endSession    = db.prepare(`UPDATE sessions SET ended_at = ?, active = 0 WHERE id = ? AND user_id = ?`);
-const getUserSessions = db.prepare(`
-  SELECT s.*, COUNT(DISTINCT c.id) as coord_count, COUNT(DISTINCT p.id) as pin_count
-  FROM sessions s
-  LEFT JOIN coords c ON c.session_id = s.id
-  LEFT JOIN pins   p ON p.session_id = s.id
-  WHERE s.user_id = ?
-  GROUP BY s.id ORDER BY s.started_at DESC
-`);
-const getSessionCoords = db.prepare(`SELECT lat, lng, recorded_at FROM coords WHERE session_id = ? ORDER BY recorded_at ASC`);
+/* ── Pin Sheet (new + edit) ── */
+#sheet-bg {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(5px);
+  display: none; align-items: flex-end;
+}
+#sheet-bg.open { display: flex; }
+#sheet {
+  width: 100%; background: #161616; border-radius: 22px 22px 0 0;
+  border-top: 1px solid rgba(255,255,255,.08);
+  padding: 10px 18px 48px; animation: slideup .22s ease;
+  max-height: 92vh; overflow-y: auto;
+}
+@keyframes slideup { from{transform:translateY(28px);opacity:0} to{transform:none;opacity:1} }
+.handle { width: 36px; height: 4px; background: #2a2a2a; border-radius: 2px; margin: 0 auto 16px; }
 
-const insertCoordsBatch = db.transaction((sessionId, coords) => {
-  const stmt = db.prepare(`INSERT INTO coords (session_id, lat, lng, recorded_at) VALUES (?, ?, ?, ?)`);
-  for (const c of coords) stmt.run(sessionId, c.lat, c.lng, c.ts || new Date().toISOString());
+.sheet-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; }
+.stitle { font-size: 17px; font-weight: 800; }
+#delete-pin-btn {
+  padding: 6px 12px; background: transparent; border: 1px solid #3a1a1a;
+  color: #e03b3b; border-radius: 8px; font-size: 13px; font-weight: 700;
+  cursor: pointer; display: none;
+}
+#delete-pin-btn.show { display: block; }
+#delete-pin-btn:active { background: #1a0a0a; }
+
+.saddr-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+#saddr-input {
+  flex: 1; background: #0d0d0d; border: 1px solid #252525; border-radius: 11px;
+  color: #fff; font-family: inherit; font-size: 14px; padding: 10px 13px; outline: none;
+}
+#saddr-input:focus { border-color: #f5a623; }
+
+.field-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #444; margin-bottom: 8px; }
+.stags { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+.tag { padding: 8px 13px; border-radius: 20px; font-size: 13px; font-weight: 700; border: 1.5px solid #252525; cursor: pointer; transition: all .15s; }
+.tag[data-s="Dropped Lit"]    { color: #f5a623; }
+.tag[data-s="No Answer"]      { color: #555; }
+.tag[data-s="Spoke to Owner"] { color: #4a9eff; }
+.tag[data-s="Interested"]     { color: #00c9a7; }
+.tag[data-s="Appointment"]    { color: #a855f7; }
+.tag.sel { background: rgba(255,255,255,.06); border-color: currentColor; }
+#notes {
+  width: 100%; background: #0d0d0d; border: 1px solid #252525; border-radius: 11px;
+  color: #fff; font-family: inherit; font-size: 15px; padding: 11px 13px;
+  resize: none; height: 76px; outline: none; margin-bottom: 13px;
+}
+#notes::placeholder { color: #333; }
+#notes:focus { border-color: #f5a623; }
+
+.photo-section { margin-bottom: 14px; }
+#photo-input { display: none; }
+#photo-preview-wrap { display: none; position: relative; margin-bottom: 8px; }
+#photo-preview { width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; display: block; }
+#photo-remove {
+  position: absolute; top: 8px; right: 8px; width: 28px; height: 28px;
+  border-radius: 50%; background: rgba(0,0,0,.7); border: none; color: #fff;
+  font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+#photo-btn {
+  width: 100%; padding: 13px; background: #1a1a1a; border: 1.5px dashed #2a2a2a;
+  border-radius: 12px; color: #555; font-size: 14px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+#photo-btn:active { background: #222; }
+
+.sbtns { display: flex; gap: 10px; }
+.bsave { flex:1; padding:15px; background:#f5a623; color:#000; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer; }
+.bcancel { padding:15px 18px; background:#1c1c1c; color:#555; border:none; border-radius:12px; font-size:15px; cursor:pointer; }
+
+/* Follow button */
+#follow-btn {
+  position: fixed; bottom: 100px; right: 16px; z-index: 300;
+  width: 48px; height: 48px; border-radius: 50%;
+  background: #0a0a0a; border: 2px solid #f5a623;
+  color: #f5a623; font-size: 20px; cursor: pointer;
+  display: none; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,.6);
+  transition: transform .1s;
+}
+#follow-btn.show { display: flex; }
+#follow-btn:active { transform: scale(.93); }
+
+
+/* ── Pin Detail Sheet ── */
+#detail-bg {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(5px);
+  display: none; align-items: flex-end;
+}
+#detail-bg.open { display: flex; }
+#detail-sheet {
+  width: 100%; background: #161616; border-radius: 22px 22px 0 0;
+  border-top: 1px solid rgba(255,255,255,.08);
+  max-height: 88vh; overflow-y: auto;
+  animation: slideup .22s ease;
+}
+#detail-photo {
+  width: 100%; max-height: 240px; object-fit: cover;
+  border-radius: 22px 22px 0 0; display: none;
+}
+#detail-photo.show { display: block; }
+.detail-body { padding: 18px 18px 48px; }
+.detail-handle { width: 36px; height: 4px; background: #2a2a2a; border-radius: 2px; margin: 0 auto 16px; }
+.detail-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.detail-addr { font-size: 19px; font-weight: 800; flex: 1; line-height: 1.25; }
+.detail-badge {
+  font-size: 11px; font-weight: 800; padding: 5px 11px;
+  border-radius: 12px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .5px;
+  margin-top: 2px;
+}
+.detail-notes { font-size: 15px; color: #888; margin: 12px 0 16px; line-height: 1.5; }
+.detail-meta { font-size: 12px; color: #3a3a3a; margin-bottom: 24px; }
+.detail-btns { display: flex; gap: 10px; }
+.detail-edit { flex: 1; padding: 15px; background: #f5a623; color: #000; border: none; border-radius: 12px; font-size: 16px; font-weight: 800; cursor: pointer; }
+.detail-delete { padding: 15px 18px; background: transparent; border: 1px solid #3a1a1a; color: #e03b3b; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
+
+
+
+
+
+/* ── Shared Route Code Display ── */
+.share-code-display {
+  background: #0d0d0d; border: 1.5px solid #252525; border-radius: 12px;
+  padding: 16px; text-align: center; margin: 12px 0 8px;
+}
+.share-code-text {
+  font-size: 30px; font-weight: 900; letter-spacing: 6px; color: #f5a623;
+  font-family: 'SF Mono', 'Courier New', monospace;
+}
+.share-code-hint { font-size: 11px; color: #444; margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* Coverage add button */
+#coverage-add-btn {
+  position: absolute; top: 16px; right: 16px; z-index: 10;
+  padding: 8px 14px; background: rgba(0,0,0,.82); border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.1); color: #f5a623;
+  font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+#coverage-add-btn:active { background: rgba(20,20,20,.95); }
+
+/* Imported routes list */
+.imported-card {
+  background: #161616; border: 1px solid #222; border-radius: 12px;
+  padding: 13px 15px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px;
+}
+.imported-swatch { width: 8px; height: 36px; border-radius: 4px; flex-shrink: 0; }
+.imported-info { flex: 1; }
+.imported-owner { font-size: 13px; font-weight: 700; color: #fff; }
+.imported-meta { font-size: 11px; color: #444; margin-top: 2px; }
+.imported-remove { background: none; border: none; color: #333; font-size: 18px; cursor: pointer; padding: 4px; }
+.imported-remove:active { color: #e03b3b; }
+
+/* ── Settings Panel ── */
+#settings-panel {
+  position: fixed; inset: 0; z-index: 400;
+  background: #0d0d0d; display: none; flex-direction: column;
+  overflow-y: auto;
+}
+#settings-panel.open { display: flex; }
+
+#settings-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 56px 20px 20px; flex-shrink: 0;
+}
+.settings-title { font-size: 22px; font-weight: 900; }
+#settings-close {
+  width: 36px; height: 36px; border-radius: 50%; background: #1c1c1c;
+  border: none; color: #888; font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.settings-body { padding: 0 16px 48px; flex: 1; }
+
+.settings-section {
+  margin-bottom: 28px;
+}
+.settings-section-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: #444; margin-bottom: 10px; padding-left: 4px;
+}
+.settings-card {
+  background: #161616; border: 1px solid #222; border-radius: 16px;
+  overflow: hidden;
+}
+.settings-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px; border-bottom: 1px solid #1c1c1c;
+  gap: 12px;
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row-label { font-size: 14px; font-weight: 600; color: #fff; }
+.settings-row-value { font-size: 14px; color: #555; text-align: right; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-row-action {
+  font-size: 14px; font-weight: 700; color: #f5a623; cursor: pointer;
+  background: none; border: none; padding: 0; flex-shrink: 0;
+}
+.settings-row-action:active { opacity: .7; }
+
+/* Change password form — hidden by default */
+#pw-form {
+  padding: 0 18px 18px; display: none; flex-direction: column; gap: 10px;
+  border-top: 1px solid #1c1c1c;
+}
+#pw-form.open { display: flex; }
+.pw-input {
+  width: 100%; background: #0d0d0d; border: 1px solid #252525; border-radius: 10px;
+  color: #fff; font-family: inherit; font-size: 15px; padding: 12px 14px; outline: none;
+}
+.pw-input:focus { border-color: #f5a623; }
+.pw-error { font-size: 12px; color: #e03b3b; display: none; }
+.pw-error.show { display: block; }
+.pw-success { font-size: 12px; color: #00c9a7; display: none; }
+.pw-success.show { display: block; }
+.pw-save-btn {
+  padding: 13px; background: #f5a623; color: #000; border: none;
+  border-radius: 10px; font-size: 15px; font-weight: 800; cursor: pointer;
+}
+.pw-save-btn:active { transform: scale(.98); }
+
+/* Logout button */
+.logout-btn {
+  width: 100%; padding: 18px; background: transparent;
+  border: 1.5px solid #3a1a1a; border-radius: 14px;
+  color: #e03b3b; font-size: 16px; font-weight: 800;
+  cursor: pointer; transition: background .15s; margin-top: 8px;
+}
+.logout-btn:active { background: rgba(224,59,59,.1); }
+
+.settings-version {
+  text-align: center; font-size: 12px; color: #2a2a2a;
+  padding: 24px 0 8px;
+}
+
+/* ── Auth Screen ── */
+#auth-screen {
+  position: fixed; inset: 0; z-index: 1000;
+  background: #0a0a0a;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 32px 24px;
+}
+#auth-screen.hidden { display: none; }
+
+.auth-logo { font-size: 26px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #f5a623; margin-bottom: 4px; }
+.auth-logo span { color: #fff; }
+.auth-sub { font-size: 13px; color: #444; margin-bottom: 40px; letter-spacing: .5px; }
+
+.auth-card {
+  width: 100%; max-width: 360px;
+  background: #161616; border-radius: 20px;
+  border: 1px solid #222; padding: 24px;
+}
+.auth-tabs { display: flex; margin-bottom: 24px; background: #0d0d0d; border-radius: 10px; padding: 3px; }
+.auth-tab {
+  flex: 1; padding: 10px; text-align: center; font-size: 14px; font-weight: 700;
+  color: #444; cursor: pointer; border-radius: 8px; transition: all .2s;
+}
+.auth-tab.active { background: #f5a623; color: #000; }
+
+.auth-field { margin-bottom: 14px; }
+.auth-field label { display: block; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #444; margin-bottom: 6px; }
+.auth-field input {
+  width: 100%; background: #0d0d0d; border: 1px solid #252525; border-radius: 10px;
+  color: #fff; font-family: inherit; font-size: 16px; padding: 13px 14px; outline: none;
+  transition: border-color .2s; -webkit-appearance: none;
+}
+.auth-field input:focus { border-color: #f5a623; }
+
+.auth-btn {
+  width: 100%; padding: 15px; background: #f5a623; color: #000;
+  border: none; border-radius: 12px; font-size: 16px; font-weight: 900;
+  letter-spacing: .5px; cursor: pointer; margin-top: 6px;
+  transition: transform .1s;
+}
+.auth-btn:active { transform: scale(.98); }
+.auth-error { font-size: 13px; color: #e03b3b; text-align: center; margin-top: 12px; min-height: 18px; }
+
+/* User badge in top pill */
+#user-name-badge {
+  font-size: 11px; color: #888; cursor: pointer; padding: 2px 0;
+  pointer-events: all;
+}
+#user-name-badge:hover { color: #f5a623; }
+
+/* ── Pin Drop Mode ── */
+#pin-crosshair {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) translateY(-20px);
+  z-index: 250;
+  pointer-events: none;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+}
+#pin-crosshair.active { display: flex; }
+#pin-crosshair svg {
+  width: 52px; height: 52px;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,.8));
+}
+#pin-crosshair-stem {
+  width: 3px; height: 16px;
+  background: linear-gradient(#f5a623, transparent);
+  border-radius: 2px;
+}
+
+#pin-confirm-bar {
+  position: fixed;
+  bottom: 100px; left: 16px; right: 16px;
+  z-index: 350;
+  display: none;
+  gap: 10px;
+}
+#pin-confirm-bar.active { display: flex; }
+#pin-confirm-btn {
+  flex: 1; padding: 16px; border: none; border-radius: 14px;
+  background: #f5a623; color: #000;
+  font-size: 16px; font-weight: 900; letter-spacing: .5px;
+  cursor: pointer; transition: transform .1s;
+}
+#pin-confirm-btn:active { transform: scale(.97); }
+#pin-cancel-btn {
+  width: 56px; padding: 16px; border: none; border-radius: 14px;
+  background: #1c1c1c; border: 1.5px solid #2c2c2c;
+  color: #888; font-size: 20px; cursor: pointer;
+}
+#pin-cancel-btn:active { transform: scale(.97); }
+
+.you-ring { width:16px; height:16px; border-radius:50%; background:#0066ff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(0,102,255,.3),0 2px 8px rgba(0,0,0,.5); }
+.pin-drop { width:14px; height:14px; border-radius:50% 50% 50% 0; border:2.5px solid #fff; transform:rotate(-45deg); box-shadow:0 3px 10px rgba(0,0,0,.7); }
+.leaflet-popup-content-wrapper { background:#161616; color:#fff; border-radius:12px; border:1px solid #252525; box-shadow:0 6px 24px rgba(0,0,0,.7); }
+.leaflet-popup-tip { background:#161616; }
+.leaflet-popup-content { margin:12px 14px; font-family:-apple-system,sans-serif; }
+</style>
+</head>
+<body>
+
+
+<!-- Auth Screen -->
+<div id="auth-screen">
+  <div class="auth-logo">Canvass<span>Track</span></div>
+  <div class="auth-sub">Roofing Sales Canvassing</div>
+  <div class="auth-card">
+    <div class="auth-tabs">
+      <div class="auth-tab active" data-auth="login">Log In</div>
+      <div class="auth-tab" data-auth="register">Sign Up</div>
+    </div>
+
+    <!-- Login form -->
+    <div id="login-form">
+      <div class="auth-field"><label>Email</label><input type="email" id="login-email" placeholder="you@email.com" autocomplete="email"/></div>
+      <div class="auth-field"><label>Password</label><input type="password" id="login-password" placeholder="Password" autocomplete="current-password"/></div>
+      <button class="auth-btn" id="login-btn">Log In</button>
+    </div>
+
+    <!-- Register form -->
+    <div id="register-form" style="display:none">
+      <div class="auth-field"><label>Name</label><input type="text" id="reg-name" placeholder="Your name" autocomplete="name"/></div>
+      <div class="auth-field"><label>Email</label><input type="email" id="reg-email" placeholder="you@email.com" autocomplete="email"/></div>
+      <div class="auth-field"><label>Password</label><input type="password" id="reg-password" placeholder="Min. 6 characters" autocomplete="new-password"/></div>
+      <button class="auth-btn" id="register-btn">Create Account</button>
+    </div>
+
+    <div class="auth-error" id="auth-error"></div>
+  </div>
+</div>
+
+<div id="map"></div>
+<div id="toppill">
+  <div class="logo">Canvass<span>Track</span></div>
+  <div id="dot"></div>
+  <div id="timer"></div>
+</div>
+<div id="toast"></div>
+
+<button id="follow-btn" title="Re-center on my location">◎</button>
+
+
+<!-- Pin drop crosshair -->
+<div id="pin-crosshair">
+  <svg viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="26" cy="26" r="10" stroke="#f5a623" stroke-width="2.5"/>
+    <line x1="26" y1="4"  x2="26" y2="14" stroke="#f5a623" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="26" y1="38" x2="26" y2="48" stroke="#f5a623" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="4"  y1="26" x2="14" y2="26" stroke="#f5a623" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="38" y1="26" x2="48" y2="26" stroke="#f5a623" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="26" cy="26" r="3" fill="#f5a623"/>
+  </svg>
+  <div id="pin-crosshair-stem"></div>
+</div>
+
+<!-- Pin drop confirm bar -->
+<div id="pin-confirm-bar">
+  <button id="pin-cancel-btn">✕</button>
+  <button id="pin-confirm-btn">📍 Log this stop</button>
+</div>
+
+<div id="bottom">
+  <button class="icon-btn" id="settingsBtn">⚙️</button>
+  <button id="trackBtn">▶ Start Tracking</button>
+  <button class="icon-btn" id="historyBtn">📋</button>
+  <button class="icon-btn" id="pinBtn">📍</button>
+</div>
+
+
+<!-- Settings Panel -->
+<div id="settings-panel">
+  <div id="settings-header">
+    <div class="settings-title">Settings</div>
+    <button id="settings-close">✕</button>
+  </div>
+  <div class="settings-body">
+
+    <!-- Account -->
+    <div class="settings-section">
+      <div class="settings-section-label">Account</div>
+      <div class="settings-card">
+        <div class="settings-row">
+          <div class="settings-row-label">Name</div>
+          <div class="settings-row-value" id="settings-name">—</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Email</div>
+          <div class="settings-row-value" id="settings-email">—</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Password</div>
+          <button class="settings-row-action" id="pw-toggle-btn">Change</button>
+        </div>
+        <div id="pw-form">
+          <input class="pw-input" type="password" id="pw-current" placeholder="Current password" autocomplete="current-password"/>
+          <input class="pw-input" type="password" id="pw-new" placeholder="New password (min. 6 chars)" autocomplete="new-password"/>
+          <input class="pw-input" type="password" id="pw-confirm" placeholder="Confirm new password" autocomplete="new-password"/>
+          <div class="pw-error" id="pw-error"></div>
+          <div class="pw-success" id="pw-success">Password updated successfully!</div>
+          <button class="pw-save-btn" id="pw-save-btn">Update Password</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="settings-section">
+      <div class="settings-section-label">Your Data</div>
+      <div class="settings-card">
+        <div class="settings-row">
+          <div class="settings-row-label">Total Routes</div>
+          <div class="settings-row-value" id="settings-routes">—</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Total Pins</div>
+          <div class="settings-row-value" id="settings-pins">—</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Photos Taken</div>
+          <div class="settings-row-value" id="settings-photos">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Logout -->
+    <div class="settings-section">
+      <div class="settings-section-label">Session</div>
+      <div class="settings-card">
+        <div class="settings-row" style="cursor:pointer" id="settings-logout-row">
+          <div class="settings-row-label" style="color:#e03b3b">Log Out</div>
+          <div style="color:#e03b3b;font-size:18px">→</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-version">CanvassTrack · Prototype</div>
+  </div>
+</div>
+
+<!-- History Panel -->
+<div id="hist-panel">
+  <div id="hist-header">
+    <div class="hist-title">History</div>
+    <button id="hist-close">✕</button>
+  </div>
+  <div id="hist-tabs">
+    <div class="htab active" data-tab="routes">Routes</div>
+    <div class="htab" data-tab="pins">Touch Points</div>
+    <div class="htab" data-tab="coverage">Coverage</div>
+  </div>
+  <div id="hist-body"></div>
+  <div id="coverage-wrap">
+    <div id="coverage-map"></div>
+    <div class="coverage-hint" id="coverage-hint-text">Your routes + shared routes</div>
+    <button id="coverage-add-btn">＋ Add Route</button>
+  </div>
+</div>
+
+
+<!-- Pin Detail Sheet -->
+<div id="detail-bg">
+  <div id="detail-sheet">
+    <img id="detail-photo" src="" alt="roof photo"/>
+    <div class="detail-body">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="detail-handle" style="margin:0"></div>
+        <button id="detail-close-btn" style="width:32px;height:32px;border-radius:50%;background:#222;border:1px solid #2a2a2a;color:#888;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
+      </div>
+      <div class="detail-top">
+        <div class="detail-addr" id="detail-addr"></div>
+        <span class="detail-badge" id="detail-badge"></span>
+      </div>
+      <div class="detail-notes" id="detail-notes"></div>
+      <div class="detail-meta" id="detail-meta"></div>
+      <div class="detail-btns">
+        <button class="detail-edit" id="detail-edit-btn">✏️ Edit</button>
+        <button class="detail-delete" id="detail-delete-btn">🗑 Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Pin Sheet -->
+<div id="sheet-bg">
+  <div id="sheet">
+    <div class="handle"></div>
+    <div class="sheet-header">
+      <div class="stitle" id="sheet-title">📍 Log this stop</div>
+      <button id="delete-pin-btn">🗑 Delete</button>
+    </div>
+
+    <div class="field-label" style="margin-top:10px">Address</div>
+    <div class="saddr-row">
+      <input type="text" id="saddr-input" placeholder="123 Main St"/>
+    </div>
+
+    <div class="field-label">Status</div>
+    <div class="stags">
+      <div class="tag" data-s="Dropped Lit">Dropped Lit</div>
+      <div class="tag" data-s="No Answer">No Answer</div>
+      <div class="tag" data-s="Spoke to Owner">Spoke to Owner</div>
+      <div class="tag" data-s="Interested">Interested</div>
+      <div class="tag" data-s="Appointment">Appointment</div>
+    </div>
+
+    <div class="field-label">Notes</div>
+    <textarea id="notes" placeholder="Roof age, damage, owner name…"></textarea>
+
+    <div class="photo-section">
+      <div class="field-label">Photo</div>
+      <div id="photo-preview-wrap">
+        <img id="photo-preview" src="" alt=""/>
+        <button id="photo-remove">✕</button>
+      </div>
+      <button id="photo-btn" onclick="document.getElementById('photo-input').click()">
+        📷 Take / Add Photo
+      </button>
+      <input type="file" id="photo-input" accept="image/*" capture="environment"/>
+    </div>
+
+    <div class="sbtns">
+      <button class="bcancel" id="bcancel">Cancel</button>
+      <button class="bsave" id="bsave">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STATUS_COLORS={'Dropped Lit':'#f5a623','No Answer':'#666','Spoke to Owner':'#4a9eff','Interested':'#00c9a7','Appointment':'#a855f7'};
+const SESSION_COLORS=['#f5a623','#00c9a7','#4a9eff','#e03b3b','#a855f7','#f97316'];
+// Auth token stored in localStorage
+let authToken = localStorage.getItem('ct_token') || null;
+let currentUser = JSON.parse(localStorage.getItem('ct_user') || 'null');
+
+function authHeaders(extra={}) {
+  return { 'Content-Type': 'application/json', ...(authToken ? { 'Authorization': 'Bearer ' + authToken } : {}), ...extra };
+}
+
+const api={
+  get:   p    => fetch(p, { headers: authHeaders() }).then(r=>r.json()),
+  post:  (p,b)=> fetch(p,{method:'POST',  headers:authHeaders(), body:JSON.stringify(b)}).then(r=>r.json()),
+  patch: (p,b)=> fetch(p,{method:'PATCH', headers:authHeaders(), body:b?JSON.stringify(b):undefined}).then(r=>r.json()),
+  del:   p    => fetch(p,{method:'DELETE', headers:authHeaders()}).then(r=>r.json()),
+};
+
+let map,coverageMap,youMarker;
+let tracking=false,watchId=null,curSession=null,curLine=null;
+let startTime=null,timerInt=null;
+let sessions=[],pins=[],allLines=[],allPinMarkers=[];
+let coordBuffer=[],pendingLL=null,selStatus='',pendingPhoto=null;
+let editingPin=null; // null = new pin, object = editing existing
+let histTab='routes',coverageMapInit=false;
+let importedRoutes=[], importedPins=[];
+let followMode=true; // auto-center map on user while tracking
+
+// Map
+map=L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
+addSatTiles(map);
+L.control.zoom({position:'topright'}).addTo(map);
+// map click disabled — use pin button flow
+map.on('dragstart',()=>{ if(tracking){ followMode=false; showFollowBtn(true); } });
+
+function addSatTiles(m){
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}).addTo(m);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,opacity:.9}).addTo(m);
+}
+
+let tT;
+function toast(msg,ms=2800){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.classList.add('show');
+  clearTimeout(tT);tT=setTimeout(()=>el.classList.remove('show'),ms);
+}
+
+async function load(){
+  try{[sessions,pins]=await Promise.all([api.get('/api/sessions'),api.get('/api/pins')]);renderAll();}catch(e){}
+}
+
+function sCol(i){return SESSION_COLORS[i%SESSION_COLORS.length];}
+
+function renderAll(){
+  allLines.forEach(l=>map.removeLayer(l));
+  allPinMarkers.forEach(m=>map.removeLayer(m));
+  allLines=[];allPinMarkers=[];
+  sessions.forEach((s,i)=>{
+    if(s.coords&&s.coords.length>1){
+      const pl=L.polyline(s.coords.map(c=>[c.lat,c.lng]),{color:s.color||sCol(i),weight:6,opacity:1}).addTo(map);
+      allLines.push(pl);
+    }
+  });
+  pins.forEach(p=>drawPin(p));
+}
+
+function drawPin(pin){
+  const c=STATUS_COLORS[pin.status]||'#f5a623';
+  let iconHtml, iconSize, iconAnchor;
+  if(pin.photo){
+    // Show circular thumbnail above a pin stem
+    iconHtml=`
+      <div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
+        <div style="
+          width:44px;height:44px;border-radius:50%;
+          border:3px solid ${c};
+          background:url('${pin.photo}') center/cover;
+          box-shadow:0 3px 10px rgba(0,0,0,.7);
+          flex-shrink:0;
+        "></div>
+        <div style="width:3px;height:8px;background:${c};border-radius:0 0 2px 2px;margin-top:-1px"></div>
+        <div style="width:7px;height:7px;border-radius:50%;background:${c};margin-top:-2px;box-shadow:0 2px 4px rgba(0,0,0,.5)"></div>
+      </div>`;
+    iconSize=[44,62];iconAnchor=[22,62];
+  } else {
+    iconHtml=`<div class="pin-drop" style="background:${c}"></div>`;
+    iconSize=[14,14];iconAnchor=[7,14];
+  }
+  const icon=L.divIcon({html:iconHtml,iconSize,iconAnchor,className:''});
+  const m=L.marker([pin.lat,pin.lng],{icon})
+    .on('click',()=>openDetail(pin.id))
+    .addTo(map);
+  allPinMarkers.push(m);
+  return m;
+}
+
+
+
+function setYou(lat,lng){
+  if(youMarker)map.removeLayer(youMarker);
+  const icon=L.divIcon({html:'<div class="you-ring"></div>',iconSize:[16,16],iconAnchor:[8,8],className:''});
+  youMarker=L.marker([lat,lng],{icon,zIndexOffset:9999}).addTo(map);
+}
+
+
+// ── Pin Detail Sheet ─────────────────────────────────────────────
+let detailPinId = null;
+
+function openDetail(pinId){
+  const pin = pins.find(p=>p.id===pinId);
+  if(!pin) return;
+  detailPinId = pinId;
+  const c = STATUS_COLORS[pin.status]||'#f5a623';
+  const d = new Date(pin.created_at||Date.now());
+
+  document.getElementById('detail-addr').textContent = pin.address||'Unnamed stop';
+  const badge = document.getElementById('detail-badge');
+  badge.textContent = pin.status||'–';
+  badge.style.cssText = `background:${c}22;color:${c};border:1px solid ${c}44`;
+
+  const notesEl = document.getElementById('detail-notes');
+  notesEl.textContent = pin.notes||'';
+  notesEl.style.display = pin.notes ? 'block' : 'none';
+
+  document.getElementById('detail-meta').textContent =
+    d.toLocaleDateString('en-US',{weekday:'short',month:'long',day:'numeric'}) +
+    ' · ' + d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+
+  const photo = document.getElementById('detail-photo');
+  if(pin.photo){ photo.src=pin.photo; photo.classList.add('show'); }
+  else { photo.src=''; photo.classList.remove('show'); }
+
+  document.getElementById('detail-bg').classList.add('open');
+}
+
+function closeDetail(){
+  document.getElementById('detail-bg').classList.remove('open');
+  detailPinId=null;
+}
+document.getElementById('detail-close-btn').addEventListener('click', closeDetail);
+document.getElementById('detail-bg').addEventListener('click',e=>{
+  if(e.target===document.getElementById('detail-bg')) closeDetail();
 });
 
-// ── Pins ───────────────────────────────────────────────────────────
-const createPin = db.prepare(`
-  INSERT INTO pins (id, user_id, session_id, lat, lng, address, status, notes, photo, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
-const updatePin = db.prepare(`
-  UPDATE pins SET address = ?, status = ?, notes = ?, photo = ? WHERE id = ? AND user_id = ?
-`);
-const getUserPins = db.prepare(`SELECT * FROM pins WHERE user_id = ? ORDER BY created_at DESC`);
-const deletePin   = db.prepare(`DELETE FROM pins WHERE id = ? AND user_id = ?`);
+document.getElementById('detail-edit-btn').addEventListener('click',()=>{
+  const pin=pins.find(p=>p.id===detailPinId);
+  if(!pin)return;
+  document.getElementById('detail-bg').classList.remove('open');
+  openSheet({lat:pin.lat,lng:pin.lng},pin);
+  detailPinId=null;
+});
 
-module.exports = {
-  // Users
-  createUser: (id, name, email, hashedPassword) =>
-    createUser.run(id, name, email, hashedPassword, new Date().toISOString()),
-  getUserByEmail: (email) => getUserByEmail.get(email),
-  getUserById:    (id)    => getUserById.get(id),
-  updatePassword: (id, hashed) => updatePassword.run(hashed, id),
+document.getElementById('detail-delete-btn').addEventListener('click',async()=>{
+  const pin=pins.find(p=>p.id===detailPinId);
+  if(!pin)return;
+  if(!confirm(`Delete this pin?\n${pin.address||'Unnamed stop'}`))return;
+  try{
+    await api.del(`/api/pins/${pin.id}`);
+    pins=pins.filter(p=>p.id!==pin.id);
+    renderAll();
+    if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
+    toast('Pin deleted');
+  }catch(e){toast('Could not delete',3000);}
+  document.getElementById('detail-bg').classList.remove('open');
+  detailPinId=null;
+});
 
-  // Sessions
-  createSession: (id, userId, color) => createSession.run(id, userId, color, new Date().toISOString()),
-  endSession:    (id, userId) => endSession.run(new Date().toISOString(), id, userId),
-  getUserSessions: (userId) => getUserSessions.all(userId).map(s => ({
-    ...s, coords: getSessionCoords.all(s.id)
-  })),
-  insertCoordsBatch,
+// ── Tracking ──────────────────────────────────────────────────────
+document.getElementById('trackBtn').addEventListener('click',()=>tracking?stopT():startT());
 
-  // Pins
-  createPin: (pin, userId) => createPin.run(
-    pin.id, userId, pin.sessionId || null, pin.lat, pin.lng,
-    pin.address || null, pin.status || 'Dropped Lit',
-    pin.notes || null, pin.photo || null, new Date().toISOString()
-  ),
-  updatePin: (pin, userId) => updatePin.run(
-    pin.address || null, pin.status || 'Dropped Lit',
-    pin.notes || null, pin.photo || null, pin.id, userId
-  ),
-  getUserPins: (userId) => getUserPins.all(userId),
-  deletePin:   (id, userId) => deletePin.run(id, userId),
-};
+function startT(){
+  if(!('geolocation' in navigator)){toast('GPS not available');return;}
+  toast('Getting your location…',3000);
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const{latitude:lat,longitude:lng}=pos.coords;
+    const id=Date.now()+'';const color=sCol(sessions.length);
+    try{await api.post('/api/sessions',{id,color});}catch(e){}
+    curSession={id,color,coords:[],started_at:new Date().toISOString()};
+    curLine=L.polyline([],{color,weight:6,opacity:1}).addTo(map);
+    tracking=true;
+    document.getElementById('trackBtn').textContent='⏹ Stop Tracking';
+    document.getElementById('trackBtn').classList.add('stop');
+    document.getElementById('dot').classList.add('on');
+    document.getElementById('timer').classList.add('show');
+    document.getElementById('pinBtn').classList.add('show');
+    startTime=Date.now();timerInt=setInterval(tickTimer,1000);
+    map.setView([lat,lng],16);setYou(lat,lng);
+    watchId=navigator.geolocation.watchPosition(onPos,onPosErr,{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
+    followMode=true;
+    toast('Tracking • tap map or 📍 to log a stop');
+  },err=>{
+    const m={1:'Location denied — Settings → Privacy → Location Services',2:'GPS unavailable',3:'GPS timed out'};
+    toast(m[err.code]||'GPS error',5000);
+  },{enableHighAccuracy:true,timeout:15000});
+}
+
+function onPos(pos){
+  const{latitude:lat,longitude:lng}=pos.coords;
+  setYou(lat,lng);
+  if(followMode) map.setView([lat,lng],map.getZoom(),{animate:true,duration:0.5});
+  if(!curSession)return;
+  const coord={lat,lng,ts:new Date().toISOString()};
+  curSession.coords.push(coord);curLine.addLatLng([lat,lng]);
+  coordBuffer.push(coord);if(coordBuffer.length>=8)flushCoords();
+}
+function onPosErr(err){toast({1:'Location denied',2:'GPS unavailable',3:'GPS timed out'}[err.code]||'GPS error',3000);}
+
+async function flushCoords(){
+  if(!curSession||!coordBuffer.length)return;
+  const batch=[...coordBuffer];coordBuffer=[];
+  try{await api.post(`/api/sessions/${curSession.id}/coords`,{coords:batch});}
+  catch(e){coordBuffer=[...batch,...coordBuffer];}
+}
+
+async function stopT(){
+  if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
+  clearInterval(timerInt);timerInt=null;await flushCoords();
+  if(curSession){
+    try{await api.patch(`/api/sessions/${curSession.id}/end`);}catch(e){}
+    sessions.push({...curSession});if(curLine)allLines.push(curLine);
+    toast(`Route saved — ${curSession.coords.length} points`);
+  }
+  tracking=false;curSession=null;curLine=null;startTime=null;coordBuffer=[];
+  document.getElementById('trackBtn').textContent='▶ Start Tracking';
+  document.getElementById('trackBtn').classList.remove('stop');
+  document.getElementById('dot').classList.remove('on');
+  document.getElementById('timer').classList.remove('show');
+  document.getElementById('timer').textContent='';
+  document.getElementById('pinBtn').classList.remove('show');
+  followMode=true; showFollowBtn(false);
+}
+
+function tickTimer(){
+  if(!startTime)return;
+  const s=Math.floor((Date.now()-startTime)/1000);
+  document.getElementById('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+
+
+// ── Settings Panel ────────────────────────────────────────────────
+document.getElementById('settingsBtn').addEventListener('click', openSettings);
+document.getElementById('settings-close').addEventListener('click', () => {
+  document.getElementById('settings-panel').classList.remove('open');
+});
+
+function openSettings() {
+  // Populate account info
+  if(currentUser){
+    document.getElementById('settings-name').textContent  = currentUser.name  || '—';
+    document.getElementById('settings-email').textContent = currentUser.email || '—';
+  }
+  // Populate stats
+  document.getElementById('settings-routes').textContent = sessions.length;
+  document.getElementById('settings-pins').textContent   = pins.length;
+  document.getElementById('settings-photos').textContent = pins.filter(p=>p.photo).length;
+  // Reset password form
+  closePwForm();
+  document.getElementById('settings-panel').classList.add('open');
+}
+
+// Password change
+document.getElementById('pw-toggle-btn').addEventListener('click', () => {
+  const form = document.getElementById('pw-form');
+  if(form.classList.contains('open')){
+    closePwForm();
+    document.getElementById('pw-toggle-btn').textContent = 'Change';
+  } else {
+    form.classList.add('open');
+    document.getElementById('pw-toggle-btn').textContent = 'Cancel';
+    document.getElementById('pw-current').focus();
+  }
+});
+
+function closePwForm(){
+  const form = document.getElementById('pw-form');
+  form.classList.remove('open');
+  document.getElementById('pw-current').value  = '';
+  document.getElementById('pw-new').value      = '';
+  document.getElementById('pw-confirm').value  = '';
+  document.getElementById('pw-error').classList.remove('show');
+  document.getElementById('pw-success').classList.remove('show');
+  document.getElementById('pw-toggle-btn').textContent = 'Change';
+}
+
+document.getElementById('pw-save-btn').addEventListener('click', async () => {
+  const current  = document.getElementById('pw-current').value;
+  const newPw    = document.getElementById('pw-new').value;
+  const confirm  = document.getElementById('pw-confirm').value;
+  const errEl    = document.getElementById('pw-error');
+  const okEl     = document.getElementById('pw-success');
+  errEl.classList.remove('show'); okEl.classList.remove('show');
+
+  if(!current || !newPw || !confirm){ errEl.textContent='Fill in all fields'; errEl.classList.add('show'); return; }
+  if(newPw.length < 6){ errEl.textContent='New password must be at least 6 characters'; errEl.classList.add('show'); return; }
+  if(newPw !== confirm){ errEl.textContent='New passwords do not match'; errEl.classList.add('show'); return; }
+
+  document.getElementById('pw-save-btn').textContent = 'Updating…';
+  try {
+    const res = await fetch('/api/auth/password', {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ currentPassword: current, newPassword: newPw })
+    });
+    const data = await res.json();
+    if(!res.ok){ errEl.textContent = data.error || 'Update failed'; errEl.classList.add('show'); }
+    else {
+      okEl.classList.add('show');
+      document.getElementById('pw-current').value = '';
+      document.getElementById('pw-new').value     = '';
+      document.getElementById('pw-confirm').value = '';
+      setTimeout(closePwForm, 2000);
+    }
+  } catch(e) { errEl.textContent='Network error'; errEl.classList.add('show'); }
+  document.getElementById('pw-save-btn').textContent = 'Update Password';
+});
+
+// Logout
+document.getElementById('settings-logout-row').addEventListener('click', () => {
+  if(!confirm('Log out of CanvassTrack?')) return;
+  authToken = null; currentUser = null;
+  localStorage.removeItem('ct_token');
+  localStorage.removeItem('ct_user');
+  document.getElementById('settings-panel').classList.remove('open');
+  // Reset app state
+  sessions=[]; pins=[]; renderAll();
+  showAuthScreen();
+});
+
+
+// ── Session Sharing ───────────────────────────────────────────────
+const SHARED_COLORS = ['#00c9a7','#4a9eff','#a855f7','#ec4899','#22d3ee','#f97316'];
+
+async function loadImportedRoutes(){
+  try {
+    const data = await api.get('/api/coverage/shared');
+    importedRoutes = data.sessions || [];
+    importedPins   = data.pins    || [];
+  } catch(e){ importedRoutes=[]; importedPins=[]; }
+}
+
+// Share a specific session — called from history route card
+async function shareSession(sessionId){
+  try {
+    const res = await api.post(`/api/sessions/${sessionId}/share`, {});
+    if(res.error){ toast(res.error, 3000); return; }
+    // Show the code in a simple prompt-style modal
+    showShareCode(res.code);
+  } catch(e){ toast('Could not generate share code', 3000); }
+}
+
+function showShareCode(code){
+  // Reuse the sheet-bg overlay for the share code display
+  const bg = document.createElement('div');
+  bg.style.cssText = 'position:fixed;inset:0;z-index:600;background:rgba(0,0,0,.65);backdrop-filter:blur(5px);display:flex;align-items:flex-end';
+  bg.innerHTML = `
+    <div style="width:100%;background:#161616;border-radius:22px 22px 0 0;border-top:1px solid rgba(255,255,255,.08);padding:20px 20px 48px">
+      <div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 18px"></div>
+      <div style="font-size:17px;font-weight:800;margin-bottom:6px">📤 Share This Route</div>
+      <div style="font-size:13px;color:#555;margin-bottom:16px">Give this code to your partner — they'll enter it on their Coverage map</div>
+      <div class="share-code-display">
+        <div class="share-code-text">${code}</div>
+        <div class="share-code-hint">Share code — valid until route is deleted</div>
+      </div>
+      <button onclick="navigator.clipboard&&navigator.clipboard.writeText('${code}')" style="width:100%;padding:14px;background:#1c1c1c;border:1.5px solid #2c2c2c;border-radius:12px;color:#f5a623;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px">📋 Copy Code</button>
+      <button id="share-close-btn" style="width:100%;padding:14px;background:transparent;border:1px solid #222;border-radius:12px;color:#555;font-size:15px;cursor:pointer">Done</button>
+    </div>`;
+  document.body.appendChild(bg);
+  bg.querySelector('#share-close-btn').addEventListener('click', ()=>bg.remove());
+  bg.addEventListener('click', e=>{ if(e.target===bg) bg.remove(); });
+}
+
+// Coverage map + Add Route button
+document.getElementById('coverage-add-btn').addEventListener('click', ()=>{
+  const bg = document.createElement('div');
+  bg.style.cssText = 'position:fixed;inset:0;z-index:600;background:rgba(0,0,0,.65);backdrop-filter:blur(5px);display:flex;align-items:flex-end';
+  bg.innerHTML = `
+    <div style="width:100%;background:#161616;border-radius:22px 22px 0 0;border-top:1px solid rgba(255,255,255,.08);padding:20px 20px 48px">
+      <div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 18px"></div>
+      <div style="font-size:17px;font-weight:800;margin-bottom:6px">＋ Add a Route</div>
+      <div style="font-size:13px;color:#555;margin-bottom:16px">Enter the share code from your partner to add their route to your coverage map</div>
+      <input id="import-code-input" style="width:100%;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:26px;font-weight:900;letter-spacing:6px;text-align:center;text-transform:uppercase;padding:14px;outline:none;margin-bottom:12px" placeholder="XXXXXX" maxlength="6"/>
+      <div id="import-error" style="font-size:12px;color:#e03b3b;margin-bottom:10px;display:none"></div>
+      <button id="import-confirm-btn" style="width:100%;padding:15px;background:#f5a623;color:#000;border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;margin-bottom:10px">Add to My Coverage</button>
+      <button id="import-cancel-btn" style="width:100%;padding:14px;background:transparent;border:1px solid #222;border-radius:12px;color:#555;font-size:15px;cursor:pointer">Cancel</button>
+    </div>`;
+  document.body.appendChild(bg);
+
+  bg.querySelector('#import-cancel-btn').addEventListener('click',()=>bg.remove());
+  bg.addEventListener('click',e=>{ if(e.target===bg) bg.remove(); });
+  bg.querySelector('#import-confirm-btn').addEventListener('click', async ()=>{
+    const code = bg.querySelector('#import-code-input').value.trim().toUpperCase();
+    const errEl = bg.querySelector('#import-error');
+    errEl.style.display='none';
+    if(!code||code.length!==6){ errEl.textContent='Enter the 6-character code'; errEl.style.display='block'; return; }
+    bg.querySelector('#import-confirm-btn').textContent='Adding…';
+    try {
+      const res = await api.post('/api/coverage/import', { code });
+      if(res.error){ errEl.textContent=res.error; errEl.style.display='block'; bg.querySelector('#import-confirm-btn').textContent='Add to My Coverage'; return; }
+      toast(`Route from ${res.owner_name} added!`);
+      await loadImportedRoutes();
+      initCoverageMap();
+      bg.remove();
+    } catch(e){ errEl.textContent='Network error'; errEl.style.display='block'; bg.querySelector('#import-confirm-btn').textContent='Add to My Coverage'; }
+  });
+
+  setTimeout(()=>bg.querySelector('#import-code-input').focus(), 100);
+});
+
+
+// ── Auth ──────────────────────────────────────────────────────────
+function showAuthScreen(){ document.getElementById('auth-screen').classList.remove('hidden'); }
+function hideAuthScreen(){ document.getElementById('auth-screen').classList.add('hidden'); }
+
+function setUser(token, user){
+  authToken = token;
+  currentUser = user;
+  localStorage.setItem('ct_token', token);
+  localStorage.setItem('ct_user', JSON.stringify(user));
+  document.getElementById('user-name-badge').textContent = user.name;
+  loadImportedRoutes();
+  hideAuthScreen();
+}
+
+
+// Tab switching
+document.querySelectorAll('.auth-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('login-form').style.display = tab.dataset.auth === 'login' ? 'block' : 'none';
+    document.getElementById('register-form').style.display = tab.dataset.auth === 'register' ? 'block' : 'none';
+    document.getElementById('auth-error').textContent = '';
+  });
+});
+
+// Login
+document.getElementById('login-btn').addEventListener('click', async () => {
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl    = document.getElementById('auth-error');
+  errEl.textContent = '';
+  if(!email || !password){ errEl.textContent = 'Please fill in all fields'; return; }
+  document.getElementById('login-btn').textContent = 'Logging in…';
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if(!res.ok){ errEl.textContent = data.error || 'Login failed'; }
+    else { setUser(data.token, data.user); load(); }
+  } catch(e) { errEl.textContent = 'Network error — try again'; }
+  document.getElementById('login-btn').textContent = 'Log In';
+});
+
+// Enter key on login
+['login-email','login-password'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if(e.key === 'Enter') document.getElementById('login-btn').click();
+  });
+});
+
+// Register
+document.getElementById('register-btn').addEventListener('click', async () => {
+  const name     = document.getElementById('reg-name').value.trim();
+  const email    = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const errEl    = document.getElementById('auth-error');
+  errEl.textContent = '';
+  if(!name || !email || !password){ errEl.textContent = 'Please fill in all fields'; return; }
+  document.getElementById('register-btn').textContent = 'Creating account…';
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name, email, password })
+    });
+    const data = await res.json();
+    if(!res.ok){ errEl.textContent = data.error || 'Registration failed'; }
+    else { setUser(data.token, data.user); load(); }
+  } catch(e) { errEl.textContent = 'Network error — try again'; }
+  document.getElementById('register-btn').textContent = 'Create Account';
+});
+
+// Check if already logged in on startup
+async function initAuth(){
+  if(authToken && currentUser){
+    try {
+      const res = await fetch('/api/auth/me', { headers: authHeaders() });
+      if(res.ok){
+        const user = await res.json();
+        setUser(authToken, user);
+        load();
+        return;
+      }
+    } catch(e) {}
+    // Token invalid — clear and show login
+    localStorage.removeItem('ct_token');
+    localStorage.removeItem('ct_user');
+    authToken = null; currentUser = null;
+  }
+  showAuthScreen();
+}
+
+// ── Pin Drop Mode ────────────────────────────────────────────────
+let dropMode = false;
+
+function enterDropMode(){
+  dropMode = true;
+  document.getElementById('pin-crosshair').classList.add('active');
+  document.getElementById('pin-confirm-bar').classList.add('active');
+  document.getElementById('pinBtn').style.background = '#f5a623';
+  document.getElementById('pinBtn').style.color = '#000';
+  document.getElementById('pinBtn').textContent = '📍';
+  followMode = false; // pause auto-follow so map stays still
+  toast('Drag map to the house, then tap Log', 3500);
+}
+
+function exitDropMode(){
+  dropMode = false;
+  document.getElementById('pin-crosshair').classList.remove('active');
+  document.getElementById('pin-confirm-bar').classList.remove('active');
+  document.getElementById('pinBtn').style.background = '';
+  document.getElementById('pinBtn').style.color = '';
+  document.getElementById('pinBtn').textContent = '📍';
+  followMode = true;
+  showFollowBtn(false);
+}
+
+document.getElementById('pinBtn').addEventListener('click',()=>{
+  if(!tracking) return;
+  if(dropMode){ exitDropMode(); return; }
+  enterDropMode();
+});
+
+document.getElementById('pin-cancel-btn').addEventListener('click',()=>{
+  exitDropMode();
+  toast('Pin cancelled');
+});
+
+document.getElementById('pin-confirm-btn').addEventListener('click',()=>{
+  const center = map.getCenter();
+  exitDropMode();
+  openSheet({ lat: center.lat, lng: center.lng }, null);
+});
+
+// ── Photo ─────────────────────────────────────────────────────────
+document.getElementById('photo-input').addEventListener('change',function(){
+  const file=this.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      const MAX=1000;let w=img.width,h=img.height;
+      if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      pendingPhoto=canvas.toDataURL('image/jpeg',0.75);
+      document.getElementById('photo-preview').src=pendingPhoto;
+      document.getElementById('photo-preview-wrap').style.display='block';
+      document.getElementById('photo-btn').style.display='none';
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById('photo-remove').addEventListener('click',()=>{
+  pendingPhoto=null;
+  document.getElementById('photo-preview-wrap').style.display='none';
+  document.getElementById('photo-btn').style.display='flex';
+  document.getElementById('photo-input').value='';
+});
+
+// ── Pin sheet — handles both NEW and EDIT ─────────────────────────
+// latlng: {lat,lng}  existingPin: null = new, object = editing
+function openSheet(latlng, existingPin){
+  editingPin = existingPin;
+  pendingLL  = latlng;
+  pendingPhoto = null;
+
+  // Reset photo UI
+  document.getElementById('photo-preview-wrap').style.display='none';
+  document.getElementById('photo-btn').style.display='flex';
+  document.getElementById('photo-input').value='';
+
+  if(existingPin){
+    // Edit mode — pre-fill everything
+    document.getElementById('sheet-title').textContent='✏️ Edit Stop';
+    document.getElementById('delete-pin-btn').classList.add('show');
+    document.getElementById('saddr-input').value=existingPin.address||'';
+    document.getElementById('notes').value=existingPin.notes||'';
+    selStatus=existingPin.status||'';
+    document.querySelectorAll('.tag').forEach(t=>{
+      t.classList.toggle('sel',t.dataset.s===selStatus);
+    });
+    if(existingPin.photo){
+      pendingPhoto=existingPin.photo;
+      document.getElementById('photo-preview').src=existingPin.photo;
+      document.getElementById('photo-preview-wrap').style.display='block';
+      document.getElementById('photo-btn').style.display='none';
+    }
+  } else {
+    // New pin mode
+    document.getElementById('sheet-title').textContent='📍 Log this stop';
+    document.getElementById('delete-pin-btn').classList.remove('show');
+    document.getElementById('saddr-input').value='';
+    document.getElementById('notes').value='';
+    selStatus='';
+    document.querySelectorAll('.tag').forEach(t=>t.classList.remove('sel'));
+    // Auto-fill address
+    document.getElementById('saddr-input').value='Getting address…';
+    reverseGeocode(latlng.lat,latlng.lng).then(a=>{
+      document.getElementById('saddr-input').value=a==='Unknown location'?'':a;
+    });
+  }
+
+  document.getElementById('sheet-bg').classList.add('open');
+}
+
+document.querySelectorAll('.tag').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.tag').forEach(x=>x.classList.remove('sel'));
+    t.classList.add('sel');selStatus=t.dataset.s;
+  });
+});
+
+document.getElementById('bcancel').addEventListener('click',()=>{
+  document.getElementById('sheet-bg').classList.remove('open');
+  pendingLL=null;pendingPhoto=null;editingPin=null;
+});
+
+document.getElementById('sheet-bg').addEventListener('click',e=>{
+  if(e.target===document.getElementById('sheet-bg')){
+    document.getElementById('sheet-bg').classList.remove('open');
+    pendingLL=null;pendingPhoto=null;editingPin=null;
+  }
+});
+
+document.getElementById('bsave').addEventListener('click',async()=>{
+  const addr=document.getElementById('saddr-input').value.trim();
+  const notes=document.getElementById('notes').value.trim();
+  const status=selStatus||'Dropped Lit';
+  const photo=pendingPhoto||null;
+
+  if(editingPin){
+    // UPDATE existing pin
+    const updated={...editingPin,address:addr,status,notes,photo};
+    try{
+      await api.patch(`/api/pins/${editingPin.id}`,{address:addr,status,notes,photo});
+      // Update local array
+      const idx=pins.findIndex(p=>p.id===editingPin.id);
+      if(idx>=0)pins[idx]=updated;
+      // Redraw all pins on map
+      renderAll();
+      // Refresh history if open
+      if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
+      toast('Pin updated ✓');
+    }catch(e){toast('Could not update',3000);}
+  } else {
+    // CREATE new pin
+    if(!pendingLL)return;
+    const pin={
+      id:Date.now()+'',lat:pendingLL.lat,lng:pendingLL.lng,
+      address:addr,status,notes,photo,
+      sessionId:curSession?curSession.id:null
+    };
+    try{
+      const saved=await api.post('/api/pins',pin);
+      pins.push(saved);drawPin(saved);
+      toast('Pin saved ✓');
+    }catch(e){toast('Could not save',3000);}
+  }
+
+  document.getElementById('sheet-bg').classList.remove('open');
+  pendingLL=null;pendingPhoto=null;editingPin=null;
+});
+
+// Delete pin
+document.getElementById('delete-pin-btn').addEventListener('click',async()=>{
+  if(!editingPin)return;
+  if(!confirm(`Delete this pin?\n${editingPin.address||'Unnamed stop'}`))return;
+  try{
+    await api.del(`/api/pins/${editingPin.id}`);
+    pins=pins.filter(p=>p.id!==editingPin.id);
+    renderAll();
+    if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
+    toast('Pin deleted');
+  }catch(e){toast('Could not delete',3000);}
+  document.getElementById('sheet-bg').classList.remove('open');
+  pendingLL=null;pendingPhoto=null;editingPin=null;
+});
+
+// ── History ───────────────────────────────────────────────────────
+document.getElementById('historyBtn').addEventListener('click',()=>{
+  document.getElementById('hist-panel').classList.add('open');renderHistTab(histTab);
+});
+document.getElementById('hist-close').addEventListener('click',()=>{
+  document.getElementById('hist-panel').classList.remove('open');
+});
+document.querySelectorAll('.htab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.htab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');histTab=tab.dataset.tab;renderHistTab(histTab);
+  });
+});
+
+function renderHistTab(tab){
+  const body=document.getElementById('hist-body');
+  const cov=document.getElementById('coverage-wrap');
+  if(tab==='coverage'){
+    body.style.display='none';cov.classList.add('active');initCoverageMap();return;
+  }
+  body.style.display='block';cov.classList.remove('active');
+
+  if(tab==='routes'){
+    if(!sessions.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">🗺️</div><div class="empty-text">No routes yet.<br>Start tracking to record your first run.</div></div>`;return;}
+    body.innerHTML='';
+    [...sessions].reverse().forEach((s,ri)=>{
+      const idx=sessions.length-1-ri;
+      const d=new Date(s.started_at);
+      const coords=s.coords||[];
+      const pc=pins.filter(p=>p.session_id===s.id||p.sessionId===s.id).length;
+      const card=document.createElement('div');card.className='route-card';
+      card.innerHTML=`<div class="route-swatch" style="background:${s.color||sCol(idx)}"></div><div class="route-info"><div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div><div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} pts · ${pc} pin${pc!==1?'s':''}</div></div><div style="color:#333;font-size:20px">›</div>`;
+      card.addEventListener('click',()=>{
+        document.getElementById('hist-panel').classList.remove('open');
+        if(coords.length>1)map.fitBounds(L.latLngBounds(coords.map(c=>[c.lat,c.lng])),{padding:[40,40]});
+      });
+      body.appendChild(card);
+    });
+  }
+
+  if(tab==='pins'){
+    if(!pins.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">📍</div><div class="empty-text">No touch points yet.<br>Tap 📍 or tap the map while tracking to log a stop.</div></div>`;return;}
+    body.innerHTML='';
+    [...pins].reverse().forEach(pin=>{
+      const c=STATUS_COLORS[pin.status]||'#f5a623';
+      const d=new Date(pin.created_at||Date.now());
+      const card=document.createElement('div');card.className='pin-card';
+      card.innerHTML=`
+        <div class="pin-top">
+          <div class="pin-addr">${pin.address||'Unnamed stop'}</div>
+          <span class="pin-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${pin.status||'–'}</span>
+          <button class="pin-edit-btn" data-id="${pin.id}">✏️</button>
+        </div>
+        ${pin.notes?`<div class="pin-notes">${pin.notes}</div>`:''}
+        ${pin.photo?`<img class="pin-thumb" src="${pin.photo}" alt="roof photo"/>`:''}
+        <div class="pin-time">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
+      `;
+      // Tap card = jump to map
+      card.addEventListener('click',e=>{
+        if(e.target.classList.contains('pin-edit-btn'))return;
+        document.getElementById('hist-panel').classList.remove('open');
+        map.setView([pin.lat,pin.lng],18);
+        setTimeout(()=>{
+          const m=allPinMarkers.find(m=>{const ll=m.getLatLng();return Math.abs(ll.lat-pin.lat)<0.0001&&Math.abs(ll.lng-pin.lng)<0.0001;});
+          if(m)m.openPopup();
+        },300);
+      });
+      // Edit button
+      card.querySelector('.pin-edit-btn').addEventListener('click',e=>{
+        e.stopPropagation();
+        document.getElementById('hist-panel').classList.remove('open');
+        openSheet({lat:pin.lat,lng:pin.lng},pin);
+      });
+      body.appendChild(card);
+    });
+  }
+}
+
+function initCoverageMap(){
+  if(!coverageMapInit){
+    coverageMap=L.map('coverage-map',{zoomControl:true,attributionControl:false});
+    addSatTiles(coverageMap);coverageMapInit=true;
+  }
+  coverageMap.eachLayer(l=>{if(l instanceof L.Polyline||l instanceof L.Marker)coverageMap.removeLayer(l);});
+  const allCoords=[];
+
+  if(coverageView==='team' && myTeam){
+    // Load and display team data
+    api.get('/api/team/data').then(data=>{
+      if(!data || data.error) return;
+      const memberColors={};
+      (data.members||[]).forEach((m,i)=>{ memberColors[m.id]=MEMBER_COLORS[i%MEMBER_COLORS.length]; });
+      (data.sessions||[]).forEach(s=>{
+        if(s.coords&&s.coords.length>1){
+          const color = memberColors[s.user_id]||'#f5a623';
+          const lls=s.coords.map(c=>[c.lat,c.lng]);
+          L.polyline(lls,{color,weight:4,opacity:.85}).addTo(coverageMap);
+          lls.forEach(ll=>allCoords.push(ll));
+        }
+      });
+      (data.pins||[]).forEach(pin=>{
+        const c=STATUS_COLORS[pin.status]||'#f5a623';
+        const memberColor = memberColors[pin.user_id]||c;
+        let iconHtml,iconSize,iconAnchor;
+        if(pin.photo){
+          iconHtml=`<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none"><div style="width:44px;height:44px;border-radius:50%;border:3px solid ${memberColor};background:url('${pin.photo}') center/cover;box-shadow:0 3px 10px rgba(0,0,0,.7);flex-shrink:0;"></div><div style="width:3px;height:8px;background:${memberColor};border-radius:0 0 2px 2px;margin-top:-1px"></div><div style="width:7px;height:7px;border-radius:50%;background:${memberColor};margin-top:-2px"></div></div>`;
+          iconSize=[44,62];iconAnchor=[22,62];
+        } else {
+          iconHtml=`<div class="pin-drop" style="background:${c}"></div>`;
+          iconSize=[14,14];iconAnchor=[7,14];
+        }
+        const icon=L.divIcon({html:iconHtml,iconSize,iconAnchor,className:''});
+        L.marker([pin.lat,pin.lng],{icon})
+          .bindPopup(`<b>${pin.address||'Stop'}</b><br><span style="color:${c};font-weight:700;font-size:12px">${pin.status||'–'}</span><br><span style="color:#888;font-size:11px">by ${pin.user_name||'Unknown'}</span>`)
+          .addTo(coverageMap);
+      });
+      if(allCoords.length>0) coverageMap.fitBounds(L.latLngBounds(allCoords),{padding:[30,30]});
+      setTimeout(()=>coverageMap.invalidateSize(),100);
+    });
+    return;
+  }
+
+  // My routes
+  sessions.forEach(s=>{
+    if(s.coords&&s.coords.length>1){
+      const lls=s.coords.map(c=>[c.lat,c.lng]);
+      L.polyline(lls,{color:'#f5a623',weight:4,opacity:.9}).addTo(coverageMap);
+      lls.forEach(ll=>allCoords.push(ll));
+    }
+  });
+
+  // Shared/imported routes in different colors
+  importedRoutes.forEach((r,i)=>{
+    if(r.coords&&r.coords.length>1){
+      const color = SHARED_COLORS[i % SHARED_COLORS.length];
+      const lls=r.coords.map(c=>[c.lat,c.lng]);
+      L.polyline(lls,{color,weight:4,opacity:.8,dashArray:'8,4'}).addTo(coverageMap);
+      lls.forEach(ll=>allCoords.push(ll));
+      // Label with owner name
+      if(r.coords.length>0){
+        const mid=r.coords[Math.floor(r.coords.length/2)];
+        L.marker([mid.lat,mid.lng],{
+          icon:L.divIcon({html:`<div style="background:${color};color:#000;font-size:10px;font-weight:800;padding:2px 6px;border-radius:8px;white-space:nowrap">${r.owner_name||'Partner'}</div>`,className:'',iconAnchor:[0,0]})
+        }).addTo(coverageMap);
+      }
+    }
+  });
+
+  pins.forEach(pin=>{
+    const c=STATUS_COLORS[pin.status]||'#f5a623';
+    let iconHtml,iconSize,iconAnchor;
+    if(pin.photo){
+      iconHtml=`<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none"><div style="width:44px;height:44px;border-radius:50%;border:3px solid ${c};background:url('${pin.photo}') center/cover;box-shadow:0 3px 10px rgba(0,0,0,.7);flex-shrink:0;"></div><div style="width:3px;height:8px;background:${c};border-radius:0 0 2px 2px;margin-top:-1px"></div><div style="width:7px;height:7px;border-radius:50%;background:${c};margin-top:-2px;box-shadow:0 2px 4px rgba(0,0,0,.5)"></div></div>`;
+      iconSize=[44,62];iconAnchor=[22,62];
+    } else {
+      iconHtml=`<div class="pin-drop" style="background:${c}"></div>`;
+      iconSize=[14,14];iconAnchor=[7,14];
+    }
+    const icon=L.divIcon({html:iconHtml,iconSize,iconAnchor,className:''});
+    L.marker([pin.lat,pin.lng],{icon})
+      .on('click',()=>{
+        // close history panel and open detail sheet
+        document.getElementById('hist-panel').classList.remove('open');
+        setTimeout(()=>openDetail(pin.id),200);
+      })
+      .addTo(coverageMap);
+  });
+  if(allCoords.length>0)coverageMap.fitBounds(L.latLngBounds(allCoords),{padding:[30,30]});
+  else coverageMap.setView([38.85,-76.53],13);
+  setTimeout(()=>coverageMap.invalidateSize(),100);
+}
+
+async function reverseGeocode(lat,lng){
+  try{
+    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,{headers:{'Accept-Language':'en'}});
+    const d=await r.json();const a=d.address||{};
+    const parts=[a.house_number&&a.road?`${a.house_number} ${a.road}`:a.road,a.city||a.town||a.village||a.county].filter(Boolean);
+    return parts.join(', ')||'Unknown location';
+  }catch(e){return 'Unknown location';}
+}
+
+// Follow button
+function showFollowBtn(show){
+  document.getElementById('follow-btn').classList.toggle('show', show);
+}
+document.getElementById('follow-btn').addEventListener('click',()=>{
+  followMode=true;
+  showFollowBtn(false);
+  if(youMarker){
+    const ll=youMarker.getLatLng();
+    map.setView([ll.lat,ll.lng],map.getZoom(),{animate:true});
+  }
+});
+
+initAuth();
+</script>
+</body>
+</html>

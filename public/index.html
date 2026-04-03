@@ -257,11 +257,13 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 
 /* Coverage add button */
 #coverage-add-btn {
-  position: absolute; top: 16px; right: 16px; z-index: 1000;
-  padding: 8px 14px; background: rgba(0,0,0,.82); border-radius: 20px;
-  border: 1px solid rgba(255,255,255,.1); color: #f5a623;
+  position: fixed; top: 72px; right: 16px; z-index: 9999;
+  padding: 8px 14px; background: rgba(0,0,0,.88); border-radius: 20px;
+  border: 1px solid #f5a623; color: #f5a623;
   font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  display: none;
 }
+#coverage-add-btn.show { display: block; }
 #coverage-add-btn:active { background: rgba(20,20,20,.95); }
 
 /* Imported routes list */
@@ -598,6 +600,8 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   </div>
 </div>
 
+<button id="coverage-add-btn">＋ Add Route</button>
+
 <!-- History Panel -->
 <div id="hist-panel">
   <div id="hist-header">
@@ -614,7 +618,6 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
     <div id="coverage-map"></div>
     <div style="position:absolute;top:12px;left:0;right:0;z-index:10;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none">
       <div style="background:rgba(0,0,0,.8);color:#fff;padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,.1);pointer-events:none;position:absolute;top:16px;left:16px;z-index:1000" id="coverage-hint-text">Your routes + shared routes</div>
-      <button id="coverage-add-btn">＋ Add Route</button>
     </div>
   </div>
 </div>
@@ -1412,6 +1415,7 @@ document.getElementById('historyBtn').addEventListener('click',()=>{
 });
 document.getElementById('hist-close').addEventListener('click',()=>{
   document.getElementById('hist-panel').classList.remove('open');
+  document.getElementById('coverage-add-btn').classList.remove('show');
 });
 document.querySelectorAll('.htab').forEach(tab=>{
   tab.addEventListener('click',()=>{
@@ -1424,9 +1428,9 @@ function renderHistTab(tab){
   const body=document.getElementById('hist-body');
   const cov=document.getElementById('coverage-wrap');
   if(tab==='coverage'){
-    body.style.display='none';cov.classList.add('active');setTimeout(()=>{ initCoverageMap(); },50);return;
+    body.style.display='none';cov.classList.add('active');document.getElementById('coverage-add-btn').classList.add('show');setTimeout(()=>{ initCoverageMap(); },50);return;
   }
-  body.style.display='block';cov.classList.remove('active');
+  body.style.display='block';cov.classList.remove('active');document.getElementById('coverage-add-btn').classList.remove('show');
 
   if(tab==='routes'){
     if(!sessions.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">🗺️</div><div class="empty-text">No routes yet.<br>Start tracking to record your first run.</div></div>`;return;}

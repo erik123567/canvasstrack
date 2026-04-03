@@ -68,6 +68,8 @@ app.post('/api/auth/login', async (req, res) => {
     if (!match) return res.status(401).json({ error: 'Invalid email or password' });
 
     const token = jwt.sign({ userId: user.id }, SECRET, { expiresIn: '90d' });
+    // Migrate any legacy (pre-auth) data to this user on first login
+    db.migrateLegacyData(user.id);
     res.json({ token, user: { id: user.id, name: user.name, email: user.email } });
   } catch(e) {
     res.status(500).json({ error: e.message });
@@ -83,6 +85,25 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// Change password
+app.patch('/api/auth/password', requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword)
+      return res.status(400).json({ error: 'Current and new password required' });
+    if (newPassword.length < 6)
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    const user = db.getUserById(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const fullUser = db.getUserByEmail(user.email);
+    const match = await bcrypt.compare(currentPassword, fullUser.password);
+    if (!match) return res.status(401).json({ error: 'Current password is incorrect' });
+    const hashed = await bcrypt.hash(newPassword, 10);
+    db.updatePassword(req.userId, hashed);
+    res.json({ updated: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Sessions (protected) ───────────────────────────────────────────

@@ -257,7 +257,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 
 /* Coverage add button */
 #coverage-add-btn {
-  position: absolute; top: 16px; right: 16px; z-index: 10;
+  position: absolute; top: 16px; right: 16px; z-index: 1000;
   padding: 8px 14px; background: rgba(0,0,0,.82); border-radius: 20px;
   border: 1px solid rgba(255,255,255,.1); color: #f5a623;
   font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
@@ -613,8 +613,8 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   <div id="coverage-wrap">
     <div id="coverage-map"></div>
     <div style="position:absolute;top:12px;left:0;right:0;z-index:10;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none">
-      <div style="background:rgba(0,0,0,.8);color:#fff;padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,.1);pointer-events:none" id="coverage-hint-text">Your routes + shared routes</div>
-      <button id="coverage-add-btn" style="pointer-events:all">＋ Add Route</button>
+      <div style="background:rgba(0,0,0,.8);color:#fff;padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,.1);pointer-events:none;position:absolute;top:16px;left:16px;z-index:1000" id="coverage-hint-text">Your routes + shared routes</div>
+      <button id="coverage-add-btn">＋ Add Route</button>
     </div>
   </div>
 </div>
@@ -752,6 +752,8 @@ function renderAll(){
     }
   });
   pins.forEach(p=>drawPin(p));
+  // Draw imported/shared pins on main map too
+  importedPins.forEach(p=>drawSharedPin(p));
 }
 
 function drawPin(pin){
@@ -785,6 +787,27 @@ function drawPin(pin){
 }
 
 
+
+// Draw a shared (imported) pin on the main map — different style to distinguish
+function drawSharedPin(pin){
+  const c = STATUS_COLORS[pin.status]||'#00c9a7';
+  const icon = L.divIcon({
+    html:`<div style="position:relative">
+      <div class="pin-drop" style="background:${c};opacity:0.8"></div>
+      <div style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:6px;white-space:nowrap">${(pin.owner_name||'Partner').split(' ')[0]}</div>
+    </div>`,
+    iconSize:[14,28], iconAnchor:[7,28], className:''
+  });
+  const m = L.marker([pin.lat,pin.lng],{icon})
+    .bindPopup(`<div style="min-width:130px">
+      <b style="font-size:14px">${pin.address||'Stop'}</b><br>
+      <span style="color:${c};font-weight:700;font-size:12px">${pin.status||'–'}</span><br>
+      <span style="color:#888;font-size:11px">📤 from ${pin.owner_name||'Partner'}</span>
+      ${pin.notes?`<br><span style="color:#999;font-size:12px">${pin.notes}</span>`:''}
+    </div>`)
+    .addTo(map);
+  allPinMarkers.push(m);
+}
 
 function setYou(lat,lng){
   if(youMarker)map.removeLayer(youMarker);
@@ -1087,7 +1110,7 @@ document.getElementById('coverage-add-btn').addEventListener('click', ()=>{
     try {
       const res = await api.post('/api/coverage/import', { code });
       if(res.error){ errEl.textContent=res.error; errEl.style.display='block'; bg.querySelector('#import-confirm-btn').textContent='Add to My Coverage'; return; }
-      toast(`Route from ${res.owner_name} added!`);
+      toast(`Route from ${res.owner_name} added to your coverage and touch points!`);
       await loadImportedRoutes();
       initCoverageMap();
       bg.remove();
@@ -1425,9 +1448,10 @@ function renderHistTab(tab){
   }
 
   if(tab==='pins'){
-    if(!pins.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">📍</div><div class="empty-text">No touch points yet.<br>Tap 📍 or tap the map while tracking to log a stop.</div></div>`;return;}
+    const allPins = [...pins, ...importedPins.map(p=>({...p, _shared:true}))];
+    if(!allPins.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">📍</div><div class="empty-text">No touch points yet.<br>Tap 📍 or tap the map while tracking to log a stop.</div></div>`;return;}
     body.innerHTML='';
-    [...pins].reverse().forEach(pin=>{
+    [...allPins].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)).forEach(pin=>{
       const c=STATUS_COLORS[pin.status]||'#f5a623';
       const d=new Date(pin.created_at||Date.now());
       const card=document.createElement('div');card.className='pin-card';

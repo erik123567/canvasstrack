@@ -257,10 +257,10 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 
 /* Coverage add button */
 #coverage-add-btn {
-  position: fixed; top: 72px; right: 16px; z-index: 9999;
-  padding: 8px 14px; background: rgba(0,0,0,.88); border-radius: 20px;
+  position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); z-index: 9999;
+  padding: 10px 22px; background: rgba(0,0,0,.88); border-radius: 24px;
   border: 1px solid #f5a623; color: #f5a623;
-  font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap;
   display: none;
 }
 #coverage-add-btn.show { display: block; }
@@ -739,7 +739,19 @@ function toast(msg,ms=2800){
 }
 
 async function load(){
-  try{[sessions,pins]=await Promise.all([api.get('/api/sessions'),api.get('/api/pins')]);renderAll();}catch(e){}
+  try{
+    // Load all data in parallel — sessions, pins, and shared routes
+    const [sessData, pinData, sharedData] = await Promise.all([
+      api.get('/api/sessions'),
+      api.get('/api/pins'),
+      api.get('/api/coverage/shared').catch(()=>({sessions:[],pins:[]}))
+    ]);
+    sessions       = sessData  || [];
+    pins           = pinData   || [];
+    importedRoutes = sharedData.sessions || [];
+    importedPins   = sharedData.pins     || [];
+    renderAll();
+  }catch(e){ console.error('load error',e); }
 }
 
 function sCol(i){return SESSION_COLORS[i%SESSION_COLORS.length];}
@@ -795,11 +807,8 @@ function drawPin(pin){
 function drawSharedPin(pin){
   const c = STATUS_COLORS[pin.status]||'#00c9a7';
   const icon = L.divIcon({
-    html:`<div style="position:relative">
-      <div class="pin-drop" style="background:${c};opacity:0.8"></div>
-      <div style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:6px;white-space:nowrap">${(pin.owner_name||'Partner').split(' ')[0]}</div>
-    </div>`,
-    iconSize:[14,28], iconAnchor:[7,28], className:''
+    html:`<div class="pin-drop" style="background:${c};opacity:0.85;border-color:rgba(255,255,255,.6)"></div>`,
+    iconSize:[14,14], iconAnchor:[7,14], className:''
   });
   const m = L.marker([pin.lat,pin.lng],{icon})
     .bindPopup(`<div style="min-width:130px">
@@ -1113,8 +1122,8 @@ document.getElementById('coverage-add-btn').addEventListener('click', ()=>{
     try {
       const res = await api.post('/api/coverage/import', { code });
       if(res.error){ errEl.textContent=res.error; errEl.style.display='block'; bg.querySelector('#import-confirm-btn').textContent='Add to My Coverage'; return; }
-      toast(`Route from ${res.owner_name} added to your coverage and touch points!`);
-      await loadImportedRoutes();
+      toast(`Route from ${res.owner_name} added — check Routes & Touch Points tabs`);
+      await load(); // reload everything including shared data
       initCoverageMap();
       bg.remove();
     } catch(e){ errEl.textContent='Network error'; errEl.style.display='block'; bg.querySelector('#import-confirm-btn').textContent='Add to My Coverage'; }
@@ -1135,7 +1144,6 @@ function setUser(token, user){
   localStorage.setItem('ct_user', JSON.stringify(user));
   const badge = document.getElementById('user-name-badge');
   if(badge) badge.textContent = user.name;
-  loadImportedRoutes();
   hideAuthScreen();
 }
 
@@ -1449,6 +1457,27 @@ function renderHistTab(tab){
       });
       body.appendChild(card);
     });
+
+    // Imported/shared routes from partners
+    importedRoutes.forEach((r,i)=>{
+      const d = new Date(r.started_at||Date.now());
+      const color = SHARED_COLORS[i % SHARED_COLORS.length];
+      const coords = r.coords||[];
+      const rc = document.createElement('div'); rc.className='route-card';
+      rc.style.borderColor = '#1c2a2a';
+      rc.innerHTML=`
+        <div class="route-swatch" style="background:${color};opacity:.7"></div>
+        <div class="route-info">
+          <div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>
+          <div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} pts</div>
+          <div style="font-size:11px;color:${color};font-weight:700;margin-top:3px">📤 Shared by ${r.owner_name||'Partner'}</div>
+        </div>`;
+      rc.addEventListener('click',()=>{
+        document.getElementById('hist-panel').classList.remove('open');
+        if(coords.length>1) map.fitBounds(L.latLngBounds(coords.map(c=>[c.lat,c.lng])),{padding:[40,40]});
+      });
+      body.appendChild(rc);
+    });
   }
 
   if(tab==='pins'){
@@ -1467,6 +1496,7 @@ function renderHistTab(tab){
         </div>
         ${pin.notes?`<div class="pin-notes">${pin.notes}</div>`:''}
         ${pin.photo?`<img class="pin-thumb" src="${pin.photo}" alt="roof photo"/>`:''}
+        ${isShared ? `<div style="font-size:11px;color:#00c9a7;font-weight:700;margin-top:4px">📤 Shared by ${pin.owner_name||'Partner'}</div>` : ''}
         <div class="pin-time">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
       `;
       // Tap card = jump to map

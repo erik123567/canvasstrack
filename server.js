@@ -143,6 +143,61 @@ app.delete('/api/pins/:id', requireAuth, (req, res) => {
   catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Shared Routes ─────────────────────────────────────────────────
+
+// Generate a share code for a session
+app.post('/api/sessions/:id/share', requireAuth, (req, res) => {
+  try {
+    // Check if already has a code
+    const existing = db.getShareCodeForSession(req.params.id, req.userId);
+    if (existing) return res.json({ code: existing.share_code });
+
+    // Generate unique 6-char code
+    let code, tries = 0;
+    do {
+      code = Math.random().toString(36).slice(2, 8).toUpperCase();
+      tries++;
+    } while (db.getSharedByCode(code) && tries < 10);
+
+    db.createShareCode(code, req.params.id, req.userId);
+    res.json({ code });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Import a shared route by code
+app.post('/api/coverage/import', requireAuth, (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Share code required' });
+
+    const shared = db.getSharedByCode(code.trim());
+    if (!shared) return res.status(404).json({ error: 'Route not found — check the code' });
+    if (shared.created_by === req.userId)
+      return res.status(400).json({ error: "That's your own route!" });
+
+    db.importRoute(req.userId, shared.session_id, code.toUpperCase(), shared.owner_name);
+    res.json({ imported: true, owner_name: shared.owner_name });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Get all imported routes + their pins
+app.get('/api/coverage/shared', requireAuth, (req, res) => {
+  try {
+    res.json({
+      sessions: db.getImportedRoutes(req.userId),
+      pins:     db.getImportedPins(req.userId),
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Remove an imported route
+app.delete('/api/coverage/shared/:sessionId', requireAuth, (req, res) => {
+  try {
+    db.removeImportedRoute(req.userId, req.params.sessionId);
+    res.json({ removed: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 

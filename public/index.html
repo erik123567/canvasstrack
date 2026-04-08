@@ -1485,36 +1485,34 @@ function renderHistTab(tab){
     if(!allPins.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">📍</div><div class="empty-text">No touch points yet.<br>Tap 📍 or tap the map while tracking to log a stop.</div></div>`;return;}
     body.innerHTML='';
     [...allPins].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)).forEach(pin=>{
-      const c=STATUS_COLORS[pin.status]||'#f5a623';
-      const d=new Date(pin.created_at||Date.now());
-      const card=document.createElement('div');card.className='pin-card';
+      const c = STATUS_COLORS[pin.status]||'#f5a623';
+      const d = new Date(pin.created_at||Date.now());
+      const isShared = !!pin._shared;
+      const card = document.createElement('div'); card.className='pin-card';
       card.innerHTML=`
         <div class="pin-top">
           <div class="pin-addr">${pin.address||'Unnamed stop'}</div>
           <span class="pin-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${pin.status||'–'}</span>
-          <button class="pin-edit-btn" data-id="${pin.id}">✏️</button>
+          ${isShared ? '' : `<button class="pin-edit-btn" data-id="${pin.id}">✏️</button>`}
         </div>
-        ${pin.notes?`<div class="pin-notes">${pin.notes}</div>`:''}
-        ${pin.photo?`<img class="pin-thumb" src="${pin.photo}" alt="roof photo"/>`:''}
+        ${pin.notes ? `<div class="pin-notes">${pin.notes}</div>` : ''}
+        ${pin.photo ? `<img class="pin-thumb" src="${pin.photo}" alt="roof photo"/>` : ''}
         ${isShared ? `<div style="font-size:11px;color:#00c9a7;font-weight:700;margin-top:4px">📤 Shared by ${pin.owner_name||'Partner'}</div>` : ''}
         <div class="pin-time">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
       `;
-      // Tap card = jump to map
       card.addEventListener('click',e=>{
-        if(e.target.classList.contains('pin-edit-btn'))return;
+        if(e.target.classList.contains('pin-edit-btn')) return;
         document.getElementById('hist-panel').classList.remove('open');
         map.setView([pin.lat,pin.lng],18);
-        setTimeout(()=>{
-          const m=allPinMarkers.find(m=>{const ll=m.getLatLng();return Math.abs(ll.lat-pin.lat)<0.0001&&Math.abs(ll.lng-pin.lng)<0.0001;});
-          if(m)m.openPopup();
-        },300);
       });
-      // Edit button
-      card.querySelector('.pin-edit-btn').addEventListener('click',e=>{
-        e.stopPropagation();
-        document.getElementById('hist-panel').classList.remove('open');
-        openSheet({lat:pin.lat,lng:pin.lng},pin);
-      });
+      if(!isShared){
+        const editBtn = card.querySelector('.pin-edit-btn');
+        if(editBtn) editBtn.addEventListener('click',e=>{
+          e.stopPropagation();
+          document.getElementById('hist-panel').classList.remove('open');
+          openSheet({lat:pin.lat,lng:pin.lng},pin);
+        });
+      }
       body.appendChild(card);
     });
   }

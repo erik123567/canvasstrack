@@ -76,6 +76,33 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Forgot password — in production this would email a reset link
+// For now it logs the request and returns success (admin can use /api/auth/admin-reset)
+app.post('/api/auth/forgot', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required' });
+    const user = db.getUserByEmail(email.toLowerCase().trim());
+    // Always return success to avoid email enumeration
+    console.log(`Password reset requested for: ${email} - exists: ${!!user}`);
+    res.json({ sent: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin reset (use this manually if needed: POST /api/auth/admin-reset with {email, newPassword, adminKey})
+app.post('/api/auth/admin-reset', async (req, res) => {
+  try {
+    const { email, newPassword, adminKey } = req.body;
+    if (adminKey !== (process.env.ADMIN_KEY || 'canvasstrack-admin')) 
+      return res.status(403).json({ error: 'Invalid admin key' });
+    const user = db.getUserByEmail(email?.toLowerCase().trim());
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const hashed = await bcrypt.hash(newPassword, 10);
+    db.updatePassword(user.id, hashed);
+    res.json({ reset: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Get current user
 app.get('/api/auth/me', requireAuth, (req, res) => {
   try {

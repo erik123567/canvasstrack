@@ -379,6 +379,52 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 #confirm-ok  { width:100%; padding:16px; background:#e03b3b; color:#fff; border:none; border-radius:13px; font-size:16px; font-weight:800; cursor:pointer; margin-bottom:10px; }
 #confirm-cancel { width:100%; padding:15px; background:#1c1c1c; color:#666; border:none; border-radius:13px; font-size:15px; cursor:pointer; }
 
+
+/* ── Map status filter ── */
+#map-filter {
+  position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+  z-index: 200; display: none; gap: 6px; flex-wrap: nowrap;
+  background: rgba(0,0,0,.82); backdrop-filter: blur(10px);
+  padding: 8px 10px; border-radius: 30px;
+  border: 1px solid rgba(255,255,255,.1);
+}
+#map-filter.show { display: flex; }
+.filt-btn {
+  padding: 6px 12px; border-radius: 20px; border: 1.5px solid transparent;
+  font-size: 11px; font-weight: 800; cursor: pointer;
+  background: transparent; letter-spacing: .5px; text-transform: uppercase;
+  transition: all .15s; white-space: nowrap;
+}
+.filt-btn.active { opacity: 1; }
+.filt-btn:not(.active) { opacity: .4; }
+
+/* ── Follow-up badge ── */
+.followup-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; padding: 3px 8px;
+  border-radius: 10px; margin-top: 4px;
+}
+.followup-badge.due { background: rgba(224,59,59,.15); color: #e03b3b; border: 1px solid rgba(224,59,59,.3); }
+.followup-badge.upcoming { background: rgba(245,166,35,.1); color: #f5a623; border: 1px solid rgba(245,166,35,.2); }
+.followup-badge.done { background: rgba(85,96,111,.1); color: #55606f; border: 1px solid rgba(85,96,111,.2); }
+
+/* ── Call button in detail ── */
+.call-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; background: rgba(0,201,167,.1);
+  border: 1px solid rgba(0,201,167,.3); border-radius: 12px;
+  color: #00c9a7; font-size: 15px; font-weight: 700;
+  cursor: pointer; margin-bottom: 12px; text-decoration: none;
+}
+.call-btn:active { background: rgba(0,201,167,.2); }
+
+/* ── Due today section in history ── */
+.due-today-header {
+  font-size: 12px; font-weight: 800; letter-spacing: 1px;
+  text-transform: uppercase; color: #e03b3b; margin: 0 0 10px;
+  display: flex; align-items: center; gap: 6px;
+}
+
 /* ── Auth Screen ── */
 #auth-screen {
   position: fixed; inset: 0; z-index: 1000;
@@ -542,6 +588,16 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 
 <button id="follow-btn" title="Re-center on my location">◎</button>
 
+<!-- Map filter bar -->
+<div id="map-filter">
+  <button class="filt-btn active" data-status="all" style="color:#fff;border-color:rgba(255,255,255,.3)">All</button>
+  <button class="filt-btn active" data-status="Dropped Lit" style="color:#f5a623;border-color:#f5a623">Lit</button>
+  <button class="filt-btn active" data-status="No Answer" style="color:#666;border-color:#666">No Ans</button>
+  <button class="filt-btn active" data-status="Spoke to Owner" style="color:#4a9eff;border-color:#4a9eff">Spoke</button>
+  <button class="filt-btn active" data-status="Interested" style="color:#00c9a7;border-color:#00c9a7">Interest</button>
+  <button class="filt-btn active" data-status="Appointment" style="color:#a855f7;border-color:#a855f7">Appt</button>
+</div>
+
 
 <!-- Pin drop crosshair -->
 <div id="pin-crosshair">
@@ -566,6 +622,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   <button class="icon-btn" id="settingsBtn">⚙️</button>
   <button id="trackBtn">▶ Start Tracking</button>
   <button class="icon-btn" id="historyBtn">📋</button>
+  <button class="icon-btn" id="filterBtn" title="Filter pins">🔍</button>
   <button class="icon-btn" id="pinBtn">📍</button>
 </div>
 
@@ -683,8 +740,10 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
         <div class="detail-addr" id="detail-addr"></div>
         <span class="detail-badge" id="detail-badge"></span>
       </div>
+      <div id="detail-contact" style="display:none;margin:10px 0 4px"></div>
       <div class="detail-notes" id="detail-notes"></div>
       <div class="detail-meta" id="detail-meta"></div>
+      <div id="detail-followup" style="margin-bottom:16px"></div>
       <div class="detail-btns">
         <button class="detail-edit" id="detail-edit-btn">✏️ Edit</button>
         <button class="detail-delete" id="detail-delete-btn">🗑 Delete</button>
@@ -716,8 +775,23 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
       <div class="tag" data-s="Appointment">Appointment</div>
     </div>
 
+    <div class="field-label">Owner Name</div>
+    <div class="saddr-row" style="margin-bottom:14px">
+      <input type="text" id="owner-name-input" placeholder="John Smith" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:14px;padding:10px 13px;outline:none"/>
+    </div>
+
+    <div class="field-label">Phone</div>
+    <div class="saddr-row" style="margin-bottom:14px">
+      <input type="tel" id="phone-input" placeholder="(555) 123-4567" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:14px;padding:10px 13px;outline:none"/>
+    </div>
+
+    <div class="field-label">Follow-up Date</div>
+    <div class="saddr-row" style="margin-bottom:14px">
+      <input type="date" id="followup-input" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:14px;padding:10px 13px;outline:none;color-scheme:dark"/>
+    </div>
+
     <div class="field-label">Notes</div>
-    <textarea id="notes" placeholder="Roof age, damage, owner name…"></textarea>
+    <textarea id="notes" placeholder="Roof age, damage, notes…"></textarea>
 
     <div class="photo-section">
       <div class="field-label">Photo</div>
@@ -923,7 +997,42 @@ function openDetail(pinId){
   if(pin.photo){ photo.src=pin.photo; photo.classList.add('show'); }
   else { photo.src=''; photo.classList.remove('show'); }
 
+  // Contact info
+  const contactEl = document.getElementById('detail-contact');
+  if(pin.owner_name || pin.phone){
+    contactEl.style.display='block';
+    let html = '';
+    if(pin.owner_name) html += `<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:4px">👤 ${pin.owner_name}</div>`;
+    if(pin.phone) html += `<a href="tel:${pin.phone}" class="call-btn">📞 ${pin.phone} <span style="font-size:12px;opacity:.7">Tap to call</span></a>`;
+    contactEl.innerHTML = html;
+  } else { contactEl.style.display='none'; }
+
+  // Follow-up date
+  const fuEl = document.getElementById('detail-followup');
+  if(pin.followup_date){
+    const today = new Date().toISOString().split('T')[0];
+    const fu = pin.followup_date;
+    let cls, label;
+    if(fu < today){ cls='due'; label='⚠️ Follow-up overdue: '+formatDate(fu); }
+    else if(fu === today){ cls='due'; label='🔴 Follow up TODAY: '+formatDate(fu); }
+    else { cls='upcoming'; label='📅 Follow up: '+formatDate(fu); }
+    fuEl.innerHTML = `<div class="followup-badge ${cls}">${label}</div>`;
+  } else { fuEl.innerHTML=''; }
+
   document.getElementById('detail-bg').classList.add('open');
+}
+
+function followupBadge(dateStr){
+  if(!dateStr) return '';
+  const today = new Date().toISOString().split('T')[0];
+  if(dateStr < today) return `<div class="followup-badge due">⚠️ Overdue: ${formatDate(dateStr)}</div>`;
+  if(dateStr === today) return `<div class="followup-badge due">🔴 Follow up TODAY</div>`;
+  return `<div class="followup-badge upcoming">📅 ${formatDate(dateStr)}</div>`;
+}
+
+function formatDate(dateStr){
+  const d = new Date(dateStr+'T12:00:00');
+  return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
 }
 
 function closeDetail(){
@@ -1239,6 +1348,50 @@ document.getElementById('forgot-submit').addEventListener('click', async ()=>{
   document.getElementById('forgot-submit').textContent='Send Reset Code';
 });
 
+
+// ── Map status filter ─────────────────────────────────────────────
+let activeFilters = new Set(['all','Dropped Lit','No Answer','Spoke to Owner','Interested','Appointment']);
+
+document.getElementById('filterBtn').addEventListener('click',()=>{
+  const bar = document.getElementById('map-filter');
+  bar.classList.toggle('show');
+});
+
+document.querySelectorAll('.filt-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const status = btn.dataset.status;
+    if(status === 'all'){
+      const allOn = activeFilters.has('all');
+      if(allOn){
+        activeFilters.clear();
+        document.querySelectorAll('.filt-btn').forEach(b=>b.classList.remove('active'));
+      } else {
+        activeFilters = new Set(['all','Dropped Lit','No Answer','Spoke to Owner','Interested','Appointment']);
+        document.querySelectorAll('.filt-btn').forEach(b=>b.classList.add('active'));
+      }
+    } else {
+      if(activeFilters.has(status)){ activeFilters.delete(status); btn.classList.remove('active'); }
+      else { activeFilters.add(status); btn.classList.add('active'); }
+      // Update "all" state
+      const allStatuses = ['Dropped Lit','No Answer','Spoke to Owner','Interested','Appointment'];
+      if(allStatuses.every(s=>activeFilters.has(s))){ activeFilters.add('all'); document.querySelector('.filt-btn[data-status="all"]').classList.add('active'); }
+      else { activeFilters.delete('all'); document.querySelector('.filt-btn[data-status="all"]').classList.remove('active'); }
+    }
+    applyFilter();
+  });
+});
+
+function applyFilter(){
+  allPinMarkers.forEach((marker, idx) => {
+    const pin = [...pins, ...importedPins][idx];
+    if(!pin) return;
+    const status = pin.status || 'Dropped Lit';
+    const visible = activeFilters.has('all') || activeFilters.has(status);
+    if(visible){ if(!map.hasLayer(marker)) marker.addTo(map); }
+    else { if(map.hasLayer(marker)) map.removeLayer(marker); }
+  });
+}
+
 // ── Auth ──────────────────────────────────────────────────────────
 function showAuthScreen(){ document.getElementById('auth-screen').classList.remove('hidden'); }
 function hideAuthScreen(){ document.getElementById('auth-screen').classList.add('hidden'); }
@@ -1437,6 +1590,9 @@ function openSheet(latlng, existingPin){
     document.getElementById('sheet-title').textContent='✏️ Edit Stop';
     document.getElementById('delete-pin-btn').classList.add('show');
     document.getElementById('saddr-input').value=existingPin.address||'';
+    document.getElementById('owner-name-input').value=existingPin.owner_name||'';
+    document.getElementById('phone-input').value=existingPin.phone||'';
+    document.getElementById('followup-input').value=existingPin.followup_date||'';
     document.getElementById('notes').value=existingPin.notes||'';
     selStatus=existingPin.status||'';
     document.querySelectorAll('.tag').forEach(t=>{
@@ -1453,6 +1609,9 @@ function openSheet(latlng, existingPin){
     document.getElementById('sheet-title').textContent='📍 Log this stop';
     document.getElementById('delete-pin-btn').classList.remove('show');
     document.getElementById('saddr-input').value='';
+    document.getElementById('owner-name-input').value='';
+    document.getElementById('phone-input').value='';
+    document.getElementById('followup-input').value='';
     document.getElementById('notes').value='';
     selStatus='';
     document.querySelectorAll('.tag').forEach(t=>t.classList.remove('sel'));
@@ -1494,9 +1653,9 @@ document.getElementById('bsave').addEventListener('click',async()=>{
 
   if(editingPin){
     // UPDATE existing pin
-    const updated={...editingPin,address:addr,status,notes,photo};
+    const updated={...editingPin,address:addr,status,notes,photo,owner_name,phone,followup_date};
     try{
-      await api.patch(`/api/pins/${editingPin.id}`,{address:addr,status,notes,photo});
+      await api.patch('/api/pins/'+editingPin.id,{address:addr,status,notes,photo,owner_name,phone,followup_date});
       // Update local array
       const idx=pins.findIndex(p=>p.id===editingPin.id);
       if(idx>=0)pins[idx]=updated;
@@ -1511,7 +1670,7 @@ document.getElementById('bsave').addEventListener('click',async()=>{
     if(!pendingLL)return;
     const pin={
       id:Date.now()+'',lat:pendingLL.lat,lng:pendingLL.lng,
-      address:addr,status,notes,photo,
+      address:addr,status,notes,photo,owner_name,phone,followup_date,
       sessionId:curSession?curSession.id:null
     };
     try{
@@ -1617,9 +1776,26 @@ function renderHistTab(tab){
   }
 
   if(tab==='pins'){
+    const today = new Date().toISOString().split('T')[0];
+    const dueToday = pins.filter(p=>p.followup_date && p.followup_date <= today);
     const allPins = [...pins, ...importedPins.map(p=>({...p, _shared:true}))];
     if(!allPins.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">📍</div><div class="empty-text">No touch points yet.<br>Tap 📍 or tap the map while tracking to log a stop.</div></div>`;return;}
     body.innerHTML='';
+    // Due today / overdue section
+    if(dueToday.length){
+      const hdr = document.createElement('div'); hdr.className='due-today-header';
+      hdr.innerHTML=`🔴 Follow-up Due (${dueToday.length})`;
+      body.appendChild(hdr);
+      dueToday.sort((a,b)=>a.followup_date.localeCompare(b.followup_date)).forEach(pin=>{
+        const c2=STATUS_COLORS[pin.status]||'#f5a623';
+        const d2=document.createElement('div');d2.className='pin-card';d2.style.borderColor='#e03b3b44';
+        d2.innerHTML=`<div style="display:flex;gap:12px;align-items:flex-start"><div style="flex:1;min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div class="pin-addr">${pin.address||'Unnamed stop'}</div><button class="pin-edit-btn" style="flex-shrink:0;min-width:44px;min-height:44px">✏️</button></div><span class="pin-badge" style="background:${c2}22;color:${c2};border:1px solid ${c2}44;display:inline-block;margin-bottom:4px">${pin.status||'–'}</span>${pin.owner_name?`<div style="font-size:12px;color:#888">👤 ${pin.owner_name}</div>`:''} ${pin.phone?`<div style="font-size:12px;color:#888">📞 ${pin.phone}</div>`:''} ${followupBadge(pin.followup_date)}</div></div>`;
+        d2.querySelector('.pin-edit-btn').addEventListener('click',e=>{e.stopPropagation();document.getElementById('hist-panel').classList.remove('open');openSheet({lat:pin.lat,lng:pin.lng},pin);});
+        d2.addEventListener('click',e=>{if(e.target.classList.contains('pin-edit-btn'))return;document.getElementById('hist-panel').classList.remove('open');map.setView([pin.lat,pin.lng],18);});
+        body.appendChild(d2);
+      });
+      const sep=document.createElement('div');sep.style.cssText='height:1px;background:#1c1c1c;margin:12px 0 14px';body.appendChild(sep);
+    }
     [...allPins].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)).forEach(pin=>{
       const c = STATUS_COLORS[pin.status]||'#f5a623';
       const d = new Date(pin.created_at||Date.now());
@@ -1635,6 +1811,9 @@ function renderHistTab(tab){
             </div>
             <span class="pin-badge" style="background:${c}22;color:${c};border:1px solid ${c}44;display:inline-block;margin-bottom:6px">${pin.status||'–'}</span>
             ${pin.notes ? `<div class="pin-notes">${pin.notes}</div>` : ''}
+            ${pin.owner_name && !isShared ? `<div style="font-size:12px;color:#888;margin-top:3px">👤 ${pin.owner_name}</div>` : ''}
+            ${pin.phone && !isShared ? `<div style="font-size:12px;color:#888">📞 ${pin.phone}</div>` : ''}
+            ${pin.followup_date && !isShared ? followupBadge(pin.followup_date) : ''}
             ${isShared ? `<div style="font-size:11px;color:#00c9a7;font-weight:700;margin-top:4px">📤 Shared by ${pin.owner_name||'Partner'}</div>` : ''}
             <div class="pin-time" style="margin-top:6px">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · ${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
           </div>

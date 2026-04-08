@@ -1528,16 +1528,17 @@ document.getElementById('bsave').addEventListener('click',async()=>{
 // Delete pin
 document.getElementById('delete-pin-btn').addEventListener('click',async()=>{
   if(!editingPin)return;
-  showConfirm('Delete this pin?', async ()=>{ try{
-    await api.del(`/api/pins/${editingPin.id}`);
-    pins=pins.filter(p=>p.id!==editingPin.id);
-    renderAll();
-    if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
-    toast('Pin deleted');
-  }catch(e){toast('Could not delete',3000);}
-  document.getElementById('sheet-bg').classList.remove('open');
-  pendingLL=null;pendingPhoto=null;editingPin=null;
-  }catch(e){toast('Could not delete',3000);}
+  showConfirm('Delete this pin?', async ()=>{
+    try{
+      const pinId = editingPin.id;
+      await api.del('/api/pins/'+pinId);
+      pins=pins.filter(p=>p.id!==pinId);
+      renderAll();
+      if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
+      toast('Pin deleted');
+    }catch(e){ toast('Could not delete',3000); }
+    document.getElementById('sheet-bg').classList.remove('open');
+    pendingLL=null; pendingPhoto=null; editingPin=null;
   }, 'Delete');
 });
 

@@ -33,16 +33,19 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS pins (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL,
-    session_id  TEXT,
-    lat         REAL NOT NULL,
-    lng         REAL NOT NULL,
-    address     TEXT,
-    status      TEXT DEFAULT 'Dropped Lit',
-    notes       TEXT,
-    photo       TEXT,
-    created_at  TEXT NOT NULL,
+    id           TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL,
+    session_id   TEXT,
+    lat          REAL NOT NULL,
+    lng          REAL NOT NULL,
+    address      TEXT,
+    status       TEXT DEFAULT 'Dropped Lit',
+    notes        TEXT,
+    photo        TEXT,
+    owner_name   TEXT,
+    phone        TEXT,
+    followup_date TEXT,
+    created_at   TEXT NOT NULL,
     FOREIGN KEY (user_id)    REFERENCES users(id),
     FOREIGN KEY (session_id) REFERENCES sessions(id)
   );
@@ -76,6 +79,9 @@ db.exec(`
 try { db.exec(`ALTER TABLE sessions ADD COLUMN user_id TEXT NOT NULL DEFAULT 'legacy'`); } catch(e) {}
 try { db.exec(`ALTER TABLE pins ADD COLUMN user_id TEXT NOT NULL DEFAULT 'legacy'`); } catch(e) {}
 try { db.exec(`ALTER TABLE pins ADD COLUMN photo TEXT`); } catch(e) {}
+try { db.exec(`ALTER TABLE pins ADD COLUMN owner_name TEXT`); } catch(e) {}
+try { db.exec(`ALTER TABLE pins ADD COLUMN phone TEXT`); } catch(e) {}
+try { db.exec(`ALTER TABLE pins ADD COLUMN followup_date TEXT`); } catch(e) {}
 
 // ── Users ──────────────────────────────────────────────────────────
 const createUser    = db.prepare(`INSERT INTO users (id, name, email, password, created_at) VALUES (?, ?, ?, ?, ?)`);
@@ -103,11 +109,11 @@ const insertCoordsBatch = db.transaction((sessionId, coords) => {
 
 // ── Pins ───────────────────────────────────────────────────────────
 const createPin = db.prepare(`
-  INSERT INTO pins (id, user_id, session_id, lat, lng, address, status, notes, photo, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO pins (id, user_id, session_id, lat, lng, address, status, notes, photo, owner_name, phone, followup_date, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 const updatePin = db.prepare(`
-  UPDATE pins SET address = ?, status = ?, notes = ?, photo = ? WHERE id = ? AND user_id = ?
+  UPDATE pins SET address = ?, status = ?, notes = ?, photo = ?, owner_name = ?, phone = ?, followup_date = ? WHERE id = ? AND user_id = ?
 `);
 const getUserPins = db.prepare(`SELECT * FROM pins WHERE user_id = ? ORDER BY created_at DESC`);
 const deletePin   = db.prepare(`DELETE FROM pins WHERE id = ? AND user_id = ?`);
@@ -158,11 +164,15 @@ module.exports = {
   createPin: (pin, userId) => createPin.run(
     pin.id, userId, pin.sessionId || null, pin.lat, pin.lng,
     pin.address || null, pin.status || 'Dropped Lit',
-    pin.notes || null, pin.photo || null, new Date().toISOString()
+    pin.notes || null, pin.photo || null,
+    pin.owner_name || null, pin.phone || null, pin.followup_date || null,
+    new Date().toISOString()
   ),
   updatePin: (pin, userId) => updatePin.run(
     pin.address || null, pin.status || 'Dropped Lit',
-    pin.notes || null, pin.photo || null, pin.id, userId
+    pin.notes || null, pin.photo || null,
+    pin.owner_name || null, pin.phone || null, pin.followup_date || null,
+    pin.id, userId
   ),
   getUserPins: (userId) => getUserPins.all(userId),
   deletePin:   (id, userId) => deletePin.run(id, userId),

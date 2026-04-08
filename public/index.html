@@ -111,7 +111,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 }
 .pin-edit-btn:active { background: #2a2a2a; color: #f5a623; }
 .pin-notes { font-size: 13px; color: #555; margin-bottom: 8px; }
-.pin-thumb { width: 100%; max-height: 160px; object-fit: cover; border-radius: 10px; margin-bottom: 8px; display: block; }
+.pin-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; flex-shrink: 0; }
 .pin-time { font-size: 11px; color: #333; }
 
 #coverage-wrap { display: none; }
@@ -1490,15 +1490,19 @@ function renderHistTab(tab){
       const isShared = !!pin._shared;
       const card = document.createElement('div'); card.className='pin-card';
       card.innerHTML=`
-        <div class="pin-top">
-          <div class="pin-addr">${pin.address||'Unnamed stop'}</div>
-          <span class="pin-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${pin.status||'–'}</span>
-          ${isShared ? '' : `<button class="pin-edit-btn" data-id="${pin.id}">✏️</button>`}
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          ${pin.photo ? `<img class="pin-thumb" src="${pin.photo}" alt="roof"/>` : ''}
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:5px">
+              <div class="pin-addr">${pin.address||'Unnamed stop'}</div>
+              ${isShared ? '' : `<button class="pin-edit-btn" data-id="${pin.id}" style="flex-shrink:0">✏️</button>`}
+            </div>
+            <span class="pin-badge" style="background:${c}22;color:${c};border:1px solid ${c}44;display:inline-block;margin-bottom:6px">${pin.status||'–'}</span>
+            ${pin.notes ? `<div class="pin-notes">${pin.notes}</div>` : ''}
+            ${isShared ? `<div style="font-size:11px;color:#00c9a7;font-weight:700;margin-top:4px">📤 Shared by ${pin.owner_name||'Partner'}</div>` : ''}
+            <div class="pin-time" style="margin-top:6px">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · ${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
+          </div>
         </div>
-        ${pin.notes ? `<div class="pin-notes">${pin.notes}</div>` : ''}
-        ${pin.photo ? `<img class="pin-thumb" src="${pin.photo}" alt="roof photo"/>` : ''}
-        ${isShared ? `<div style="font-size:11px;color:#00c9a7;font-weight:700;margin-top:4px">📤 Shared by ${pin.owner_name||'Partner'}</div>` : ''}
-        <div class="pin-time">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
       `;
       card.addEventListener('click',e=>{
         if(e.target.classList.contains('pin-edit-btn')) return;

@@ -23,11 +23,12 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 #dot { width: 8px; height: 8px; border-radius: 50%; background: #3a3a3a; transition: all .3s; }
 #dot.on { background: #f5a623; box-shadow: 0 0 7px #f5a623; animation: blink 1.3s infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
-#timer { font-size: 13px; font-weight: 700; color: #f5a623; display: none; }
-#timer.show { display: block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#timer { font-size: 13px; font-weight: 700; color: #f5a623; visibility: hidden; min-width: 36px; }
+#timer.show { visibility: visible; }
 
 #toast {
-  position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+  position: fixed; bottom: 160px; left: 50%; transform: translateX(-50%);
   z-index: 200; background: rgba(20,20,20,.92); color: #fff;
   border-radius: 22px; padding: 10px 20px; font-size: 14px; font-weight: 600;
   max-width: 88vw; text-align: center; white-space: normal;
@@ -48,6 +49,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 }
 #trackBtn:active { transform: scale(.97); }
 #trackBtn.stop { background: #e03b3b; color: #fff; }
+#trackBtn:disabled { opacity: .6; transform: none !important; cursor: default; }
 .icon-btn {
   width: 60px; height: 56px; border: none; border-radius: 14px; cursor: pointer;
   font-size: 22px; background: #1c1c1c; border: 1.5px solid #2c2c2c;
@@ -117,6 +119,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 #coverage-wrap { display: none; }
 #coverage-wrap.active { display: block; position: relative; }
 #coverage-map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+#coverage-hint-text { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); z-index:1000; background:rgba(0,0,0,.8); color:#fff; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; border:1px solid rgba(255,255,255,.1); pointer-events:none; white-space:nowrap; }
 
 
 .empty-state { text-align: center; padding: 60px 20px; color: #333; }
@@ -195,7 +198,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 
 /* Follow button */
 #follow-btn {
-  position: fixed; bottom: 100px; right: 16px; z-index: 300;
+  position: fixed; bottom: 160px; right: 16px; z-index: 300;
   width: 48px; height: 48px; border-radius: 50%;
   background: #0a0a0a; border: 2px solid #f5a623;
   color: #f5a623; font-size: 20px; cursor: pointer;
@@ -359,6 +362,23 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   padding: 24px 0 8px;
 }
 
+
+/* ── Custom Confirm Sheet ── */
+#confirm-bg {
+  position: fixed; inset: 0; z-index: 3000;
+  background: rgba(0,0,0,.6); backdrop-filter: blur(4px);
+  display: none; align-items: flex-end;
+}
+#confirm-bg.open { display: flex; }
+#confirm-sheet {
+  width: 100%; background: #161616; border-radius: 22px 22px 0 0;
+  border-top: 1px solid rgba(255,255,255,.08);
+  padding: 20px 20px 48px; animation: slideup .2s ease;
+}
+#confirm-msg { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 20px; text-align: center; line-height: 1.4; }
+#confirm-ok  { width:100%; padding:16px; background:#e03b3b; color:#fff; border:none; border-radius:13px; font-size:16px; font-weight:800; cursor:pointer; margin-bottom:10px; }
+#confirm-cancel { width:100%; padding:15px; background:#1c1c1c; color:#666; border:none; border-radius:13px; font-size:15px; cursor:pointer; }
+
 /* ── Auth Screen ── */
 #auth-screen {
   position: fixed; inset: 0; z-index: 1000;
@@ -490,10 +510,29 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
     </div>
 
     <div class="auth-error" id="auth-error"></div>
+    <div id="forgot-link" style="text-align:center;margin-top:12px;font-size:13px;color:#444;cursor:pointer">Forgot password?</div>
+  </div>
+</div>
+
+<!-- Forgot password sheet -->
+<div id="forgot-bg" style="position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.7);backdrop-filter:blur(5px);display:none;align-items:flex-end">
+  <div style="width:100%;background:#161616;border-radius:22px 22px 0 0;border-top:1px solid rgba(255,255,255,.08);padding:20px 20px 48px">
+    <div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 18px"></div>
+    <div style="font-size:17px;font-weight:800;margin-bottom:8px">Reset Password</div>
+    <div style="font-size:13px;color:#555;margin-bottom:16px">Enter your email and we'll send a reset code</div>
+    <input type="email" id="forgot-email" style="width:100%;background:#0d0d0d;border:1px solid #252525;border-radius:10px;color:#fff;font-family:inherit;font-size:15px;padding:12px 14px;outline:none;margin-bottom:10px" placeholder="your@email.com"/>
+    <div id="forgot-error" style="font-size:12px;color:#e03b3b;margin-bottom:10px;display:none"></div>
+    <div id="forgot-success" style="font-size:13px;color:#00c9a7;margin-bottom:10px;display:none;line-height:1.5"></div>
+    <button id="forgot-submit" style="width:100%;padding:15px;background:#f5a623;color:#000;border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;margin-bottom:10px">Send Reset Code</button>
+    <button id="forgot-close" style="width:100%;padding:14px;background:transparent;border:1px solid #222;border-radius:12px;color:#555;font-size:15px;cursor:pointer">Cancel</button>
   </div>
 </div>
 
 <div id="map"></div>
+<div id="loading-overlay" style="position:fixed;inset:0;z-index:999;background:#0a0a0a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+  <div class="auth-logo">Canvass<span>Track</span></div>
+  <div style="width:32px;height:32px;border:3px solid #1c1c1c;border-top-color:#f5a623;border-radius:50%;animation:spin .8s linear infinite"></div>
+</div>
 <div id="toppill">
   <div class="logo">Canvass<span>Track</span></div>
   <div id="dot"></div>
@@ -616,12 +655,20 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   <div id="hist-body"></div>
   <div id="coverage-wrap">
     <div id="coverage-map"></div>
-    <div style="position:absolute;top:12px;left:0;right:0;z-index:10;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none">
-      <div style="background:rgba(0,0,0,.8);color:#fff;padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,.1);pointer-events:none;position:absolute;top:16px;left:16px;z-index:1000" id="coverage-hint-text">Your routes + shared routes</div>
-    </div>
+    <div id="coverage-hint-text">Your routes + shared routes</div>
   </div>
 </div>
 
+
+
+<!-- Custom Confirm Sheet -->
+<div id="confirm-bg">
+  <div id="confirm-sheet">
+    <div id="confirm-msg"></div>
+    <button id="confirm-ok">Confirm</button>
+    <button id="confirm-cancel">Cancel</button>
+  </div>
+</div>
 
 <!-- Pin Detail Sheet -->
 <div id="detail-bg">
@@ -678,10 +725,12 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
         <img id="photo-preview" src="" alt=""/>
         <button id="photo-remove">✕</button>
       </div>
-      <button id="photo-btn" onclick="document.getElementById('photo-input').click()">
-        📷 Take / Add Photo
-      </button>
-      <input type="file" id="photo-input" accept="image/*" capture="environment"/>
+      <div style="display:flex;gap:8px">
+        <button id="photo-btn-camera" onclick="document.getElementById('photo-input-camera').click()" style="flex:1;padding:12px;background:#1a1a1a;border:1.5px dashed #2a2a2a;border-radius:12px;color:#555;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">📷 Camera</button>
+        <button id="photo-btn" onclick="document.getElementById('photo-input').click()" style="flex:1;padding:12px;background:#1a1a1a;border:1.5px dashed #2a2a2a;border-radius:12px;color:#555;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">🖼 Gallery</button>
+      </div>
+      <input type="file" id="photo-input-camera" accept="image/*" capture="environment" style="display:none"/>
+      <input type="file" id="photo-input" accept="image/*"/>
     </div>
 
     <div class="sbtns">
@@ -751,7 +800,8 @@ async function load(){
     importedRoutes = sharedData.sessions || [];
     importedPins   = sharedData.pins     || [];
     renderAll();
-  }catch(e){ console.error('load error',e); }
+    const ov=document.getElementById('loading-overlay'); if(ov) ov.style.display='none';
+  }catch(e){ console.error('load error',e); const ov=document.getElementById('loading-overlay'); if(ov) ov.style.display='none'; }
 }
 
 function sCol(i){return SESSION_COLORS[i%SESSION_COLORS.length];}
@@ -828,6 +878,24 @@ function setYou(lat,lng){
 }
 
 
+
+// ── Custom confirm (replaces browser confirm()) ────────────────────
+let confirmCallback = null;
+function showConfirm(msg, onConfirm, confirmLabel='Confirm'){
+  confirmCallback = onConfirm;
+  document.getElementById('confirm-msg').textContent = msg;
+  document.getElementById('confirm-ok').textContent = confirmLabel;
+  document.getElementById('confirm-bg').classList.add('open');
+}
+document.getElementById('confirm-ok').addEventListener('click',()=>{
+  document.getElementById('confirm-bg').classList.remove('open');
+  if(confirmCallback){ confirmCallback(); confirmCallback=null; }
+});
+document.getElementById('confirm-cancel').addEventListener('click',()=>{
+  document.getElementById('confirm-bg').classList.remove('open');
+  confirmCallback=null;
+});
+
 // ── Pin Detail Sheet ─────────────────────────────────────────────
 let detailPinId = null;
 
@@ -878,16 +946,18 @@ document.getElementById('detail-edit-btn').addEventListener('click',()=>{
 document.getElementById('detail-delete-btn').addEventListener('click',async()=>{
   const pin=pins.find(p=>p.id===detailPinId);
   if(!pin)return;
-  if(!confirm(`Delete this pin?\n${pin.address||'Unnamed stop'}`))return;
-  try{
-    await api.del(`/api/pins/${pin.id}`);
-    pins=pins.filter(p=>p.id!==pin.id);
-    renderAll();
-    if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
-    toast('Pin deleted');
-  }catch(e){toast('Could not delete',3000);}
-  document.getElementById('detail-bg').classList.remove('open');
-  detailPinId=null;
+  showConfirm('Delete this pin?', async ()=>{
+    try{
+      const pid=detailPinId;
+      await api.del('/api/pins/'+pid);
+      pins=pins.filter(p=>p.id!==pid);
+      renderAll();
+      if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
+      toast('Pin deleted');
+    }catch(e){toast('Could not delete',3000);}
+    document.getElementById('detail-bg').classList.remove('open');
+    detailPinId=null;
+  }, 'Delete');
 });
 
 // ── Tracking ──────────────────────────────────────────────────────
@@ -895,6 +965,8 @@ document.getElementById('trackBtn').addEventListener('click',()=>tracking?stopT(
 
 function startT(){
   if(!('geolocation' in navigator)){toast('GPS not available');return;}
+  document.getElementById('trackBtn').textContent='Getting GPS…';
+  document.getElementById('trackBtn').disabled=true;
   toast('Getting your location…',3000);
   navigator.geolocation.getCurrentPosition(async pos=>{
     const{latitude:lat,longitude:lng}=pos.coords;
@@ -912,9 +984,12 @@ function startT(){
     map.setView([lat,lng],16);setYou(lat,lng);
     watchId=navigator.geolocation.watchPosition(onPos,onPosErr,{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
     followMode=true;
+    document.getElementById('trackBtn').disabled=false;
     toast('Tracking • tap map or 📍 to log a stop');
   },err=>{
     const m={1:'Location denied — Settings → Privacy → Location Services',2:'GPS unavailable',3:'GPS timed out'};
+    document.getElementById('trackBtn').textContent='▶ Start Tracking';
+    document.getElementById('trackBtn').disabled=false;
     toast(m[err.code]||'GPS error',5000);
   },{enableHighAccuracy:true,timeout:15000});
 }
@@ -976,8 +1051,8 @@ function openSettings() {
     document.getElementById('settings-email').textContent = currentUser.email || '—';
   }
   // Populate stats
-  document.getElementById('settings-routes').textContent = sessions.length;
-  document.getElementById('settings-pins').textContent   = pins.length;
+  document.getElementById('settings-routes').textContent = sessions.length + (importedRoutes.length ? ` (+${importedRoutes.length} shared)` : '');
+  document.getElementById('settings-pins').textContent   = pins.length + (importedPins.length ? ` (+${importedPins.length} shared)` : '');
   document.getElementById('settings-photos').textContent = pins.filter(p=>p.photo).length;
   // Reset password form
   closePwForm();
@@ -1042,7 +1117,7 @@ document.getElementById('pw-save-btn').addEventListener('click', async () => {
 
 // Logout
 document.getElementById('settings-logout-row').addEventListener('click', () => {
-  if(!confirm('Log out of CanvassTrack?')) return;
+  showConfirm('Log out of CanvassTrack?', ()=>{
   authToken = null; currentUser = null;
   localStorage.removeItem('ct_token');
   localStorage.removeItem('ct_user');
@@ -1050,6 +1125,7 @@ document.getElementById('settings-logout-row').addEventListener('click', () => {
   // Reset app state
   sessions=[]; pins=[]; renderAll();
   showAuthScreen();
+  }, 'Log Out');
 });
 
 
@@ -1133,6 +1209,36 @@ document.getElementById('coverage-add-btn').addEventListener('click', ()=>{
 });
 
 
+
+// ── Forgot password ────────────────────────────────────────────────
+document.getElementById('forgot-link').addEventListener('click',()=>{
+  document.getElementById('forgot-bg').style.display='flex';
+  document.getElementById('forgot-error').style.display='none';
+  document.getElementById('forgot-success').style.display='none';
+  document.getElementById('forgot-email').value='';
+});
+document.getElementById('forgot-close').addEventListener('click',()=>{
+  document.getElementById('forgot-bg').style.display='none';
+});
+document.getElementById('forgot-submit').addEventListener('click', async ()=>{
+  const email = document.getElementById('forgot-email').value.trim();
+  const errEl = document.getElementById('forgot-error');
+  const okEl  = document.getElementById('forgot-success');
+  errEl.style.display='none'; okEl.style.display='none';
+  if(!email){ errEl.textContent='Enter your email'; errEl.style.display='block'; return; }
+  document.getElementById('forgot-submit').textContent='Sending…';
+  try{
+    const res = await fetch('/api/auth/forgot', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email})
+    });
+    const data = await res.json();
+    if(!res.ok){ errEl.textContent=data.error||'Error'; errEl.style.display='block'; }
+    else { okEl.textContent='If that email exists, a reset code has been sent. Check with your admin.'; okEl.style.display='block'; }
+  }catch(e){ errEl.textContent='Network error'; errEl.style.display='block'; }
+  document.getElementById('forgot-submit').textContent='Send Reset Code';
+});
+
 // ── Auth ──────────────────────────────────────────────────────────
 function showAuthScreen(){ document.getElementById('auth-screen').classList.remove('hidden'); }
 function hideAuthScreen(){ document.getElementById('auth-screen').classList.add('hidden'); }
@@ -1155,6 +1261,7 @@ document.querySelectorAll('.auth-tab').forEach(tab => {
     tab.classList.add('active');
     document.getElementById('login-form').style.display = tab.dataset.auth === 'login' ? 'block' : 'none';
     document.getElementById('register-form').style.display = tab.dataset.auth === 'register' ? 'block' : 'none';
+    document.getElementById('forgot-link').style.display = tab.dataset.auth === 'login' ? 'block' : 'none';
     document.getElementById('auth-error').textContent = '';
   });
 });
@@ -1179,10 +1286,15 @@ document.getElementById('login-btn').addEventListener('click', async () => {
   document.getElementById('login-btn').textContent = 'Log In';
 });
 
-// Enter key on login
+// Enter key on login and register forms
 ['login-email','login-password'].forEach(id => {
   document.getElementById(id).addEventListener('keydown', e => {
     if(e.key === 'Enter') document.getElementById('login-btn').click();
+  });
+});
+['reg-name','reg-email','reg-password'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if(e.key === 'Enter') document.getElementById('register-btn').click();
   });
 });
 
@@ -1270,8 +1382,13 @@ document.getElementById('pin-confirm-btn').addEventListener('click',()=>{
 });
 
 // ── Photo ─────────────────────────────────────────────────────────
+document.getElementById('photo-input-camera').addEventListener('change', function(){ handlePhotoFile(this); });
 document.getElementById('photo-input').addEventListener('change',function(){
-  const file=this.files[0];if(!file)return;
+  handlePhotoFile(this);
+});
+
+function handlePhotoFile(input){
+  const file=input.files[0];if(!file)return;
   const reader=new FileReader();
   reader.onload=e=>{
     const img=new Image();
@@ -1285,17 +1402,20 @@ document.getElementById('photo-input').addEventListener('change',function(){
       document.getElementById('photo-preview').src=pendingPhoto;
       document.getElementById('photo-preview-wrap').style.display='block';
       document.getElementById('photo-btn').style.display='none';
+      document.getElementById('photo-btn-camera').style.display='none';
     };
     img.src=e.target.result;
   };
   reader.readAsDataURL(file);
-});
+}
 
 document.getElementById('photo-remove').addEventListener('click',()=>{
   pendingPhoto=null;
   document.getElementById('photo-preview-wrap').style.display='none';
   document.getElementById('photo-btn').style.display='flex';
+  document.getElementById('photo-btn-camera').style.display='flex';
   document.getElementById('photo-input').value='';
+  document.getElementById('photo-input-camera').value='';
 });
 
 // ── Pin sheet — handles both NEW and EDIT ─────────────────────────
@@ -1308,7 +1428,9 @@ function openSheet(latlng, existingPin){
   // Reset photo UI
   document.getElementById('photo-preview-wrap').style.display='none';
   document.getElementById('photo-btn').style.display='flex';
+  document.getElementById('photo-btn-camera').style.display='flex';
   document.getElementById('photo-input').value='';
+  document.getElementById('photo-input-camera').value='';
 
   if(existingPin){
     // Edit mode — pre-fill everything
@@ -1364,7 +1486,8 @@ document.getElementById('sheet-bg').addEventListener('click',e=>{
 });
 
 document.getElementById('bsave').addEventListener('click',async()=>{
-  const addr=document.getElementById('saddr-input').value.trim();
+  const rawAddr=document.getElementById('saddr-input').value.trim();
+  const addr=(rawAddr==='Getting address…'||rawAddr==='Getting address...')?'':rawAddr;
   const notes=document.getElementById('notes').value.trim();
   const status=selStatus||'Dropped Lit';
   const photo=pendingPhoto||null;
@@ -1405,8 +1528,7 @@ document.getElementById('bsave').addEventListener('click',async()=>{
 // Delete pin
 document.getElementById('delete-pin-btn').addEventListener('click',async()=>{
   if(!editingPin)return;
-  if(!confirm(`Delete this pin?\n${editingPin.address||'Unnamed stop'}`))return;
-  try{
+  showConfirm('Delete this pin?', async ()=>{ try{
     await api.del(`/api/pins/${editingPin.id}`);
     pins=pins.filter(p=>p.id!==editingPin.id);
     renderAll();
@@ -1415,6 +1537,8 @@ document.getElementById('delete-pin-btn').addEventListener('click',async()=>{
   }catch(e){toast('Could not delete',3000);}
   document.getElementById('sheet-bg').classList.remove('open');
   pendingLL=null;pendingPhoto=null;editingPin=null;
+  }catch(e){toast('Could not delete',3000);}
+  }, 'Delete');
 });
 
 // ── History ───────────────────────────────────────────────────────
@@ -1471,7 +1595,18 @@ function renderHistTab(tab){
           <div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>
           <div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} pts</div>
           <div style="font-size:11px;color:${color};font-weight:700;margin-top:3px">📤 Shared by ${r.owner_name||'Partner'}</div>
-        </div>`;
+        </div>
+        <button class="remove-shared-btn" data-sid="${r.session_id}" style="background:none;border:none;color:#444;font-size:20px;cursor:pointer;padding:4px 8px;flex-shrink:0" title="Remove">✕</button>`;
+      rc.querySelector('.remove-shared-btn').addEventListener('click', async e=>{
+        e.stopPropagation();
+        showConfirm('Remove this shared route from your coverage?', async ()=>{
+          try{
+            await api.del('/api/coverage/shared/'+r.session_id);
+            await load(); renderHistTab('routes'); initCoverageMap();
+            toast('Shared route removed');
+          }catch(ex){ toast('Could not remove',3000); }
+        });
+      });
       rc.addEventListener('click',()=>{
         document.getElementById('hist-panel').classList.remove('open');
         if(coords.length>1) map.fitBounds(L.latLngBounds(coords.map(c=>[c.lat,c.lng])),{padding:[40,40]});
@@ -1495,7 +1630,7 @@ function renderHistTab(tab){
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:5px">
               <div class="pin-addr">${pin.address||'Unnamed stop'}</div>
-              ${isShared ? '' : `<button class="pin-edit-btn" data-id="${pin.id}" style="flex-shrink:0">✏️</button>`}
+              ${isShared ? '' : `<button class="pin-edit-btn" data-id="${pin.id}" style="flex-shrink:0;min-width:44px;min-height:44px">✏️</button>`}
             </div>
             <span class="pin-badge" style="background:${c}22;color:${c};border:1px solid ${c}44;display:inline-block;margin-bottom:6px">${pin.status||'–'}</span>
             ${pin.notes ? `<div class="pin-notes">${pin.notes}</div>` : ''}
@@ -1558,10 +1693,7 @@ function initCoverageMap(){
       const lls = r.coords.map(c=>[c.lat,c.lng]);
       L.polyline(lls, {color, weight:4, opacity:.8, dashArray:'8,4'}).addTo(coverageMap);
       lls.forEach(ll=>allCoords.push(ll));
-      const mid = r.coords[Math.floor(r.coords.length/2)];
-      L.marker([mid.lat,mid.lng],{
-        icon:L.divIcon({html:`<div style="background:${color};color:#000;font-size:10px;font-weight:800;padding:2px 7px;border-radius:8px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)">${r.owner_name||'Partner'}</div>`,className:'',iconAnchor:[0,0]})
-      }).addTo(coverageMap);
+
     }
   });
 

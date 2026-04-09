@@ -284,16 +284,18 @@ function fetchJSON(url, redirectCount = 0) {
 
 function iemTypeToCanvass(p) {
   // IEM single-char type codes
+  // IEM ignores type= URL filter so we get all types and filter here
   const code = p.type || '';
   if (code === 'H') return 'hail';
   if (code === 'T') return 'tornado';
-  if (code === 'G' || code === 'D' || code === 'W') return 'wind';
-  // Fallback on typetext for anything ambiguous
+  // Wind: G=wind gust, D=wind damage, W=high wind, N=non-tstm wind dmg
+  if (code === 'G' || code === 'D' || code === 'W' || code === 'N') return 'wind';
+  // Fallback: parse typetext string
   const txt = (p.typetext || '').toUpperCase();
   if (txt === 'HAIL') return 'hail';
   if (txt === 'TORNADO') return 'tornado';
   if (txt.includes('WND') || txt.includes('WIND')) return 'wind';
-  return null; // skip floods, snow, etc.
+  return null; // floods, snow, etc. filtered out
 }
 
 function parseIEMFeatures(features) {
@@ -309,8 +311,8 @@ function parseIEMFeatures(features) {
       if (isNaN(lat) || isNaN(lng)) return null;
       // magnitude: inches for hail, mph for wind, EF# for tornado
       const mag = parseFloat(p.magnitude) || 0;
-      if (type === 'hail' && mag < 1.0) return null;  // ≥1" hail only
-      if (type === 'wind' && mag < 58)  return null;   // ≥58mph wind only
+      if (type === 'hail' && mag < 0.75) return null; // ≥0.75" (penny) = insurance threshold
+      if (type === 'wind' && mag < 45)  return null;   // ≥45mph — lower to catch more damage events
       // IEM date field is 'valid' (UTC ISO string)
       const dateStr = (p.valid || '').split('T')[0] || new Date().toISOString().split('T')[0];
       return {
@@ -389,6 +391,33 @@ app.get('/api/storm/debug', async (req, res) => {
     });
     res.json(raw);
   } catch(e) { res.json({ error: e.message }); }
+});
+
+
+// Stats endpoint — shows raw IEM data breakdown for debugging
+app.get('/api/storm/stats', async (req, res) => {
+  try {
+    if (!stormCache.data) {
+      return res.json({ error: 'No data cached yet — hit /api/storm/events?days=30 first' });
+    }
+    const byType = {};
+    const raw = stormCache.data;
+    raw.forEach(e => { byType[e.type] = (byType[e.type]||0)+1; });
+
+    // Also show what gets filtered at each threshold
+    const hailAll   = raw.filter(e=>e.type==='hail');
+    const windAll   = raw.filter(e=>e.type==='wind');
+    const tornAll   = raw.filter(e=>e.type==='tornado');
+
+    res.json({
+      total_cached: raw.length,
+      by_type: byType,
+      hail:    { total: hailAll.length, ge075: hailAll.filter(e=>e.mag>=0.75).length, ge1: hailAll.filter(e=>e.mag>=1.0).length, ge175: hailAll.filter(e=>e.mag>=1.75).length },
+      wind:    { total: windAll.length, ge45: windAll.filter(e=>e.mag>=45).length, ge58: windAll.filter(e=>e.mag>=58).length, ge75: windAll.filter(e=>e.mag>=75).length },
+      tornado: { total: tornAll.length },
+      date_range: { oldest: raw.map(e=>e.date).sort()[0], newest: raw.map(e=>e.date).sort().reverse()[0] }
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/storm/hail', (req, res) => res.redirect('/api/storm/events?' + new URLSearchParams(req.query).toString()));

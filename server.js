@@ -285,25 +285,29 @@ function iemTypeToCanvass(p) {
 
 function parseIEMFeatures(features) {
   return features.map(f => {
-    const p = f.properties;
-    const type = iemTypeToCanvass(p);
-    if (!type) return null;
-    const lat = f.geometry?.coordinates?.[1];
-    const lng = f.geometry?.coordinates?.[0];
-    if (!lat || !lng) return null;
-    const mag = parseFloat(p.magnitude) || 0;
-    // Filter: hail ≥1", wind ≥58mph, all tornadoes
-    if (type === 'hail' && mag < 1.0) return null;
-    if (type === 'wind' && mag < 58)  return null;  // 58mph minimum for roof damage
-    return {
-      type,
-      date: (p.valid || p.utc_valid || '').split('T')[0],
-      mag,
-      location: p.city || p.location || '',
-      county:   p.county || '',
-      state:    p.state  || '',
-      lat, lng
-    };
+    try {
+      const p = f.properties || {};
+      const type = iemTypeToCanvass(p);
+      if (!type) return null;
+      const coords = f.geometry && f.geometry.coordinates;
+      if (!coords || coords.length < 2) return null;
+      const lng = parseFloat(coords[0]);
+      const lat = parseFloat(coords[1]);
+      if (isNaN(lat) || isNaN(lng)) return null;
+      // magnitude: inches for hail, mph for wind, EF# for tornado
+      const mag = parseFloat(p.magnitude) || 0;
+      if (type === 'hail' && mag < 1.0) return null;  // ≥1" hail only
+      if (type === 'wind' && mag < 58)  return null;   // ≥58mph wind only
+      // IEM date field is 'valid' (UTC ISO string)
+      const dateStr = (p.valid || '').split('T')[0] || new Date().toISOString().split('T')[0];
+      return {
+        type, date: dateStr, mag,
+        location: p.city  || '',
+        county:   p.county || '',
+        state:    p.st    || p.state || '',
+        lat, lng
+      };
+    } catch(err) { return null; }
   }).filter(Boolean);
 }
 
@@ -318,23 +322,29 @@ app.get('/api/storm/events', async (req, res) => {
       return res.json(stormCache.data.filter(e => e.date >= cutoff));
     }
 
-    // Build date range — always fetch 90 days and cache the full set
+    // Build ISO date strings for IEM API (no milliseconds)
     const ets = new Date();
     const sts = new Date(now - 90 * 86400000);
-    const fmt = d => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const toISOSimple = d => d.toISOString().split('.')[0] + 'Z';
 
-    // IEM LSR (Local Storm Reports) API — single request for all event types
-    // types: H=hail, T=tornado, D=wind damage, G=wind gust
-    const url = `https://mesonet.agron.iastate.edu/geojson/lsrs.geojson?` +
-      `sts=${fmt(sts)}&ets=${fmt(ets)}&wfo=ALL&fmt=geojson&type=H,T,D,G`;
+    // IEM LSR API — one request for 90 days, all types
+    // wfo=ALL gets nationwide data
+    const url = 'https://mesonet.agron.iastate.edu/geojson/lsrs.geojson' +
+      '?sts=' + toISOSimple(sts) +
+      '&ets=' + toISOSimple(ets) +
+      '&wfo=ALL';
 
-    console.log('Fetching IEM storm data:', url);
+    console.log('Fetching IEM storm data...');
     const geojson = await fetchJSON(url);
+
+    if (!geojson || typeof geojson !== 'object') {
+      throw new Error('IEM returned non-JSON response');
+    }
     const features = geojson.features || [];
-    console.log(`IEM returned ${features.length} raw features`);
+    console.log('IEM returned ' + features.length + ' raw features');
 
     const all = parseIEMFeatures(features);
-    console.log(`Parsed ${all.length} qualifying storm events`);
+    console.log('Parsed ' + all.length + ' qualifying storm events');
 
     stormCache = { data: all, fetchedAt: now };
     const cutoff = new Date(now - days * 86400000).toISOString().split('T')[0];

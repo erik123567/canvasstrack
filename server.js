@@ -174,7 +174,7 @@ app.post('/api/pins', requireAuth, (req, res) => {
     const pin = req.body;
     if (!pin.id || !pin.lat || !pin.lng)
       return res.status(400).json({ error: 'id, lat, lng required' });
-    db.createPin(pin, req.userId);
+    db.createPin(pin, req.userId); // pin includes owner_name, phone, followup_date
     res.json({ ...pin, user_id: req.userId, created_at: new Date().toISOString() });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -245,6 +245,100 @@ app.delete('/api/coverage/shared/:sessionId', requireAuth, (req, res) => {
     res.json({ removed: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
+
+// ── Storm Data (NOAA SPC) — Hail, Wind, Tornadoes ─────────────────
+const https = require('https');
+let stormCache = { data: null, fetchedAt: 0 };
+
+function fetchNoaaCSV(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { 'User-Agent': 'CanvassTrack/1.0' } }, res => {
+      let raw = '';
+      res.on('data', d => raw += d);
+      res.on('end', () => resolve(raw));
+    });
+    req.on('error', reject);
+    req.setTimeout(8000, () => { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+// NOAA SPC CSV format: Time, Magnitude, Location, County, State, Lat, Lon, Comments
+// Hail magnitude = size in inches, Wind magnitude = speed in knots, Tornado = F/EF scale
+function parseStormCSV(csv, date, type) {
+  const lines = csv.trim().split('\n').slice(1);
+  return lines.map(line => {
+    const parts = line.split(',');
+    if (parts.length < 7) return null;
+    const mag = parseFloat(parts[1]);
+    const lat = parseFloat(parts[5]);
+    const lng = parseFloat(parts[6]);
+    if (isNaN(lat) || isNaN(lng)) return null;
+    // Filter thresholds
+    if (type === 'hail' && (isNaN(mag) || mag < 1.0)) return null;  // ≥1" hail
+    if (type === 'wind' && (isNaN(mag) || mag < 50))  return null;  // ≥50 knots (~58mph)
+    return {
+      type, date, mag: isNaN(mag) ? 0 : mag,
+      location: (parts[2] || '').trim(),
+      county:   (parts[3] || '').trim(),
+      state:    (parts[4] || '').trim(),
+      lat, lng
+    };
+  }).filter(Boolean);
+}
+
+async function fetchDaysForType(type, days) {
+  const today = new Date();
+  const suffix = type === 'hail' ? 'hail' : type === 'wind' ? 'wind' : 'torn';
+  const promises = [];
+  for (let d = 0; d < days; d++) {
+    const dt = new Date(today); dt.setDate(dt.getDate() - d);
+    const yy = String(dt.getFullYear()).slice(2);
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    const dateStr = dt.toISOString().split('T')[0];
+    const url = d === 0
+      ? `https://www.spc.noaa.gov/climo/reports/today_filtered_${suffix}.csv`
+      : `https://www.spc.noaa.gov/climo/reports/${yy}${mm}${dd}_filtered_${suffix}.csv`;
+    promises.push(
+      fetchNoaaCSV(url).then(csv => parseStormCSV(csv, dateStr, type)).catch(() => [])
+    );
+  }
+  const results = await Promise.all(promises);
+  return results.flat();
+}
+
+app.get('/api/storm/events', async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 30, 90);
+    const now  = Date.now();
+
+    // Cache full 90-day dataset for 1 hour
+    if (stormCache.data && now - stormCache.fetchedAt < 3600000) {
+      const cutoff = new Date(now - days * 86400000).toISOString().split('T')[0];
+      return res.json(stormCache.data.filter(e => e.date >= cutoff));
+    }
+
+    // Fetch all three types in parallel (90 days each)
+    const [hail, wind, torn] = await Promise.all([
+      fetchDaysForType('hail', 90),
+      fetchDaysForType('wind', 90),
+      fetchDaysForType('tornado', 90),
+    ]);
+
+    const all = [...hail, ...wind, ...torn];
+    stormCache = { data: all, fetchedAt: now };
+    const cutoff = new Date(now - days * 86400000).toISOString().split('T')[0];
+    res.json(all.filter(e => e.date >= cutoff));
+
+  } catch(e) {
+    console.error('Storm fetch error:', e.message);
+    res.status(500).json({ error: 'Could not fetch storm data' });
+  }
+});
+
+// Keep old /api/storm/hail endpoint for backwards compatibility
+app.get('/api/storm/hail', (req, res) => res.redirect('/api/storm/events?' + new URLSearchParams(req.query).toString()));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));

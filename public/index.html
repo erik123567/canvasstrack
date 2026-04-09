@@ -638,6 +638,58 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 }
 #sync-badge.show { display: block; }
 
+
+/* ── Damage photo gallery ── */
+.damage-gallery {
+  display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.damage-gallery::-webkit-scrollbar { display: none; }
+.damage-thumb-wrap {
+  position: relative; flex-shrink: 0;
+  width: 80px; height: 80px;
+}
+.damage-thumb {
+  width: 80px; height: 80px; object-fit: cover;
+  border-radius: 10px; cursor: pointer;
+  border: 1.5px solid #2a2a2a;
+}
+.damage-thumb:active { opacity: .8; }
+.damage-thumb-del {
+  position: absolute; top: -6px; right: -6px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #e03b3b; border: 2px solid #0d0d0d;
+  color: #fff; font-size: 11px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; line-height: 1;
+}
+.damage-add-btn {
+  width: 80px; height: 80px; border-radius: 10px; flex-shrink: 0;
+  background: #1a1a1a; border: 1.5px dashed #2a2a2a;
+  color: #444; font-size: 24px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.damage-add-btn:active { background: #222; }
+
+/* Full-screen photo viewer */
+#photo-viewer {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(0,0,0,.95); display: none;
+  align-items: center; justify-content: center;
+  flex-direction: column;
+}
+#photo-viewer.open { display: flex; }
+#photo-viewer img {
+  max-width: 100%; max-height: 85vh; object-fit: contain;
+  border-radius: 8px;
+}
+#photo-viewer-close {
+  position: absolute; top: 16px; right: 16px;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: rgba(255,255,255,.15); border: none;
+  color: #fff; font-size: 20px; cursor: pointer;
+}
+
 /* ── Auth Screen ── */
 #auth-screen {
   position: fixed; inset: 0; z-index: 1000;
@@ -884,6 +936,12 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   </div>
 </div>
 
+<!-- Full-screen photo viewer -->
+<div id="photo-viewer">
+  <button id="photo-viewer-close">✕</button>
+  <img id="photo-viewer-img" src="" alt=""/>
+</div>
+
 <!-- Settings Panel -->
 <div id="settings-panel">
   <div id="settings-header">
@@ -1047,6 +1105,11 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
       </div>
       <div id="detail-contact" style="display:none;margin:10px 0 4px"></div>
       <div class="detail-notes" id="detail-notes"></div>
+      <!-- Damage photos gallery in detail -->
+      <div id="detail-damage-section" style="margin:12px 0;display:none">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#444;margin-bottom:8px">Damage Photos</div>
+        <div class="damage-gallery" id="detail-damage-gallery"></div>
+      </div>
       <div class="detail-meta" id="detail-meta"></div>
       <div id="detail-followup" style="margin-bottom:16px"></div>
       <div class="detail-btns">
@@ -1105,7 +1168,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
     <textarea id="notes" placeholder="Roof age, damage, notes…"></textarea>
 
     <div class="photo-section">
-      <div class="field-label">Photo</div>
+      <div class="field-label">Cover Photo <span style="color:#444;font-weight:400;text-transform:none;letter-spacing:0">— shows on map marker</span></div>
       <div id="photo-preview-wrap">
         <img id="photo-preview" src="" alt=""/>
         <button id="photo-remove">✕</button>
@@ -1117,6 +1180,12 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
       <input type="file" id="photo-input-camera" accept="image/*" capture="environment" style="display:none"/>
       <input type="file" id="photo-input" accept="image/*"/>
     </div>
+
+    <div class="field-label" style="margin-top:4px">Damage Photos</div>
+    <div class="damage-gallery" id="sheet-damage-gallery">
+      <button class="damage-add-btn" id="damage-add-btn" onclick="document.getElementById('damage-photo-input').click()">+</button>
+    </div>
+    <input type="file" id="damage-photo-input" accept="image/*" style="display:none" multiple/>
 
     <div class="sbtns">
       <button class="bcancel" id="bcancel">Cancel</button>
@@ -2178,6 +2247,131 @@ async function renderStormsTab() {
 }
 
 
+
+// ── Damage Photos ─────────────────────────────────────────────────
+let sheetDamagePhotos = []; // pending new photos in current sheet session
+let detailDamagePhotos = []; // loaded photos for current detail view
+
+// Photo viewer
+document.getElementById('photo-viewer-close').addEventListener('click', () => {
+  document.getElementById('photo-viewer').classList.remove('open');
+});
+document.getElementById('photo-viewer').addEventListener('click', e => {
+  if(e.target === document.getElementById('photo-viewer')) {
+    document.getElementById('photo-viewer').classList.remove('open');
+  }
+});
+function openPhotoViewer(src) {
+  document.getElementById('photo-viewer-img').src = src;
+  document.getElementById('photo-viewer').classList.add('open');
+}
+
+// Handle damage photo input in sheet
+document.getElementById('damage-photo-input').addEventListener('change', function() {
+  const files = Array.from(this.files);
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX = 1200; let w = img.width, h = img.height;
+        if(w > MAX){ h = Math.round(h*MAX/w); w = MAX; }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        sheetDamagePhotos.push(dataUrl);
+        renderSheetDamageGallery();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+  this.value = '';
+});
+
+function renderSheetDamageGallery() {
+  const gallery = document.getElementById('sheet-damage-gallery');
+  // Keep the add button, rebuild thumbs before it
+  gallery.innerHTML = '';
+  sheetDamagePhotos.forEach((photo, i) => {
+    const wrap = document.createElement('div'); wrap.className = 'damage-thumb-wrap';
+    const img  = document.createElement('img');  img.className = 'damage-thumb'; img.src = photo;
+    img.addEventListener('click', () => openPhotoViewer(photo));
+    const del  = document.createElement('button'); del.className = 'damage-thumb-del'; del.textContent = '✕';
+    del.addEventListener('click', e => { e.stopPropagation(); sheetDamagePhotos.splice(i, 1); renderSheetDamageGallery(); });
+    wrap.appendChild(img); wrap.appendChild(del); gallery.appendChild(wrap);
+  });
+  const addBtn = document.createElement('button'); addBtn.className = 'damage-add-btn';
+  addBtn.textContent = '+'; addBtn.onclick = () => document.getElementById('damage-photo-input').click();
+  gallery.appendChild(addBtn);
+}
+
+// Reset damage photos when sheet opens
+function resetDamageSheet() {
+  sheetDamagePhotos = [];
+  renderSheetDamageGallery();
+}
+
+// Load existing damage photos when editing a pin
+async function loadDamagePhotosForPin(pinId) {
+  try {
+    const photos = await api.get('/api/pins/' + pinId + '/photos');
+    detailDamagePhotos = photos || [];
+    // Show in sheet gallery for editing
+    sheetDamagePhotos = []; // new ones only
+    const gallery = document.getElementById('sheet-damage-gallery');
+    gallery.innerHTML = '';
+    // Show existing photos first (can't delete here, delete from detail)
+    detailDamagePhotos.forEach(p => {
+      const wrap = document.createElement('div'); wrap.className = 'damage-thumb-wrap';
+      const img  = document.createElement('img');  img.className = 'damage-thumb'; img.src = p.photo;
+      img.addEventListener('click', () => openPhotoViewer(p.photo));
+      // Show as existing — no delete in edit sheet (manage from detail)
+      wrap.appendChild(img); gallery.appendChild(wrap);
+    });
+    const addBtn = document.createElement('button'); addBtn.className = 'damage-add-btn';
+    addBtn.textContent = '+'; addBtn.onclick = () => document.getElementById('damage-photo-input').click();
+    gallery.appendChild(addBtn);
+  } catch(e) { resetDamageSheet(); }
+}
+
+// Save new damage photos after pin save
+async function saveDamagePhotos(pinId) {
+  for(const photo of sheetDamagePhotos) {
+    try { await api.post('/api/pins/' + pinId + '/photos', { photo }); }
+    catch(e) { console.warn('Failed to save damage photo:', e.message); }
+  }
+  sheetDamagePhotos = [];
+}
+
+// Load and render damage photos in detail view
+async function renderDetailDamageGallery(pinId) {
+  const section = document.getElementById('detail-damage-section');
+  const gallery = document.getElementById('detail-damage-gallery');
+  try {
+    const photos = await api.get('/api/pins/' + pinId + '/photos');
+    detailDamagePhotos = photos || [];
+    if(!detailDamagePhotos.length) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    gallery.innerHTML = '';
+    detailDamagePhotos.forEach(p => {
+      const wrap = document.createElement('div'); wrap.className = 'damage-thumb-wrap';
+      const img  = document.createElement('img');  img.className = 'damage-thumb'; img.src = p.photo;
+      img.addEventListener('click', () => openPhotoViewer(p.photo));
+      const del = document.createElement('button'); del.className = 'damage-thumb-del'; del.textContent = '✕';
+      del.addEventListener('click', async e => {
+        e.stopPropagation();
+        try {
+          await api.del('/api/pins/' + pinId + '/photos/' + p.id);
+          await renderDetailDamageGallery(pinId);
+        } catch(err) { toast('Could not delete photo', 2000); }
+      });
+      wrap.appendChild(img); wrap.appendChild(del); gallery.appendChild(wrap);
+    });
+  } catch(e) { section.style.display = 'none'; }
+}
+
 // ── Route Snap (Map Matching) ────────────────────────────────────
 
 // Auto-snap after stop — runs silently in background
@@ -2703,6 +2897,7 @@ function openSheet(latlng, existingPin){
   if(existingPin){
     // Edit mode — pre-fill everything
     document.getElementById('sheet-title').textContent='✏️ Edit Stop';
+    loadDamagePhotosForPin(existingPin.id);
     document.getElementById('delete-pin-btn').classList.add('show');
     document.getElementById('saddr-input').value=existingPin.address||'';
     document.getElementById('interaction-date-input').value=existingPin.interaction_date||new Date().toISOString().split('T')[0];
@@ -2777,6 +2972,7 @@ document.getElementById('bsave').addEventListener('click',async()=>{
     const updated={...editingPin,address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date};
     try{
       await api.patch('/api/pins/'+editingPin.id,{address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date});
+      await saveDamagePhotos(editingPin.id);
       // Update local array
       const idx=pins.findIndex(p=>p.id===editingPin.id);
       if(idx>=0)pins[idx]=updated;
@@ -2804,6 +3000,7 @@ document.getElementById('bsave').addEventListener('click',async()=>{
       try{
         const saved=await api.post('/api/pins',pin);
         pins.push(saved);drawPin(saved);
+        await saveDamagePhotos(saved.id);
         toast('Pin saved ✓');
       }catch(e){
         // Failed — save locally and queue

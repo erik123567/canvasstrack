@@ -429,6 +429,29 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 .legend-row { display: flex; align-items: center; gap: 7px; }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
+
+/* ── Storms tab ── */
+.storm-tab-days {
+  padding: 4px 9px; border-radius: 12px; font-size: 11px; font-weight: 800;
+  border: 1px solid #2a2a2a; color: #444; background: transparent; cursor: pointer;
+}
+.storm-tab-days.active { border-color: #e03b3b; color: #e03b3b; background: rgba(224,59,59,.1); }
+.storm-tab-type { transition: opacity .15s; }
+.storm-tab-type:not(.active) { opacity: .35; }
+
+.storm-event-card {
+  background: #161616; border: 1px solid #222; border-radius: 12px;
+  padding: 11px 13px; margin-bottom: 8px; cursor: pointer;
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.storm-event-card:active { border-color: rgba(255,255,255,.2); }
+.storm-event-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+.storm-event-info { flex: 1; min-width: 0; }
+.storm-event-size { font-size: 14px; font-weight: 800; }
+.storm-event-loc { font-size: 12px; color: #555; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.storm-event-date { font-size: 11px; color: #333; margin-top: 3px; }
+.storm-event-dist { font-size: 11px; font-weight: 700; flex-shrink: 0; }
+
 /* ── Map status filter ── */
 #map-filter {
   position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
@@ -772,6 +795,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
     <div class="htab active" data-tab="routes">Routes</div>
     <div class="htab" data-tab="pins">Touch Points</div>
     <div class="htab" data-tab="coverage">Coverage</div>
+    <div class="htab" data-tab="storms">⛈️ Storms</div>
   </div>
   <div id="hist-body"></div>
   <div id="coverage-wrap">
@@ -797,6 +821,24 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
       <div class="legend-row"><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #a855f7;flex-shrink:0"></div><span style="color:#ccc">EF2–EF3</span></div>
       <div class="legend-row"><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #7c3aed;flex-shrink:0"></div><span style="color:#ccc">EF4–EF5</span></div>
     </div>
+  </div>
+
+  <!-- Storms tab panel -->
+  <div id="storms-wrap" style="display:none;flex-direction:column;flex:1;overflow:hidden;position:absolute;top:0;left:0;right:0;bottom:0;background:#0d0d0d">
+    <div style="padding:10px 14px 8px;display:flex;align-items:center;gap:7px;flex-wrap:nowrap;border-bottom:1px solid #1c1c1c;flex-shrink:0;overflow-x:auto">
+      <button class="storm-tab-type active" data-stt="hail" style="padding:5px 10px;border-radius:14px;font-size:12px;font-weight:800;border:1.5px solid #f5e62366;color:#f5e623;background:rgba(245,230,35,.08);cursor:pointer;white-space:nowrap">⛈️ Hail</button>
+      <button class="storm-tab-type active" data-stt="wind" style="padding:5px 10px;border-radius:14px;font-size:12px;font-weight:800;border:1.5px solid #4a9eff66;color:#4a9eff;background:rgba(74,158,255,.08);cursor:pointer;white-space:nowrap">💨 Wind</button>
+      <button class="storm-tab-type active" data-stt="tornado" style="padding:5px 10px;border-radius:14px;font-size:12px;font-weight:800;border:1.5px solid #a855f766;color:#a855f7;background:rgba(168,85,247,.08);cursor:pointer;white-space:nowrap">🌪️ Tornado</button>
+      <div style="margin-left:auto;display:flex;gap:4px;flex-shrink:0">
+        <button class="storm-tab-days active" data-std="30">30d</button>
+        <button class="storm-tab-days" data-std="90">90d</button>
+        <button class="storm-tab-days" data-std="180">6mo</button>
+        <button class="storm-tab-days" data-std="365">1yr</button>
+      </div>
+    </div>
+    <div style="padding:6px 14px;font-size:11px;color:#444;flex-shrink:0;border-bottom:1px solid #1a1a1a" id="storms-meta">Tap to load storm data</div>
+    <div id="storms-map" style="flex:0 0 40%;min-height:0;position:relative"></div>
+    <div id="storms-list" style="flex:1;overflow-y:auto;padding:8px 12px 80px"></div>
   </div>
 </div>
 
@@ -1561,6 +1603,225 @@ async function loadStorm(){
   } catch(e){ loadEl.style.display='none'; toast('Storm data unavailable', 3000); }
 }
 
+
+// ── Storms Tab ────────────────────────────────────────────────────
+let stormsMap = null, stormsMapInit = false;
+let stormTabDays = 30, stormTabTypes = new Set(['hail','wind','tornado']);
+let allStormEvents = null, stormEventsLoading = false;
+
+// Type toggle buttons in storms tab
+document.querySelectorAll('.storm-tab-type').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const t = btn.dataset.stt;
+    if(stormTabTypes.has(t)){ stormTabTypes.delete(t); btn.classList.remove('active'); }
+    else { stormTabTypes.add(t); btn.classList.add('active'); }
+    renderStormsTab();
+  });
+});
+
+// Day range buttons in storms tab
+document.querySelectorAll('.storm-tab-days').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.storm-tab-days').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    stormTabDays = parseInt(btn.dataset.std);
+    allStormEvents = null; // force reload
+    renderStormsTab();
+  });
+});
+
+async function loadStormEvents() {
+  if(allStormEvents !== null) return allStormEvents;
+  if(stormEventsLoading) return null;
+  stormEventsLoading = true;
+  try {
+    const events = await api.get('/api/storm/events?days=' + stormTabDays);
+    allStormEvents = events || [];
+    stormEventsLoading = false;
+    return allStormEvents;
+  } catch(e) {
+    stormEventsLoading = false;
+    return [];
+  }
+}
+
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLng = (lng2-lng1) * Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function milesFromKm(km) { return km * 0.621371; }
+
+async function renderStormsTab() {
+  const wrap = document.getElementById('storms-wrap');
+  const meta = document.getElementById('storms-meta');
+  const list = document.getElementById('storms-list');
+  if(!wrap) return;
+
+  // Init storms map
+  const mapDiv = document.getElementById('storms-map');
+  if(!stormsMapInit && mapDiv) {
+    // Size the map
+    const panelH = document.getElementById('hist-panel').offsetHeight;
+    const headerH = document.getElementById('hist-header').offsetHeight;
+    const tabsH   = document.getElementById('hist-tabs').offsetHeight;
+    const ctrlH   = 80; // controls row + meta row
+    mapDiv.style.height = Math.floor((panelH - headerH - tabsH - ctrlH) * 0.42) + 'px';
+    stormsMap = L.map('storms-map', { zoomControl: true, attributionControl: false });
+    addSatTiles(stormsMap);
+    stormsMapInit = true;
+  }
+  setTimeout(() => { if(stormsMap) stormsMap.invalidateSize(); }, 100);
+
+  meta.textContent = 'Loading storm data…';
+  list.innerHTML = '';
+
+  const events = await loadStormEvents();
+  if(!events) { meta.textContent = 'Could not load storm data'; return; }
+
+  // Get user position for distance sorting
+  const userPos = youMarker ? youMarker.getLatLng() : null;
+
+  // Filter by type and days
+  const cutoff = new Date(Date.now() - stormTabDays * 86400000).toISOString().split('T')[0];
+  let filtered = events.filter(e =>
+    stormTabTypes.has(e.type) && e.date >= cutoff
+  );
+
+  // Add distance if we have position, sort by distance
+  if(userPos) {
+    filtered = filtered.map(e => ({
+      ...e,
+      distKm: haversineKm(userPos.lat, userPos.lng, e.lat, e.lng)
+    })).sort((a,b) => a.distKm - b.distKm);
+  } else {
+    // Sort by date descending if no position
+    filtered.sort((a,b) => b.date.localeCompare(a.date));
+  }
+
+  // Update meta
+  const nearCount = userPos ? filtered.filter(e => e.distKm < 80).length : filtered.length;
+  meta.textContent = `${filtered.length} events · ${nearCount} within 50mi · ${stormTabDays}d window`;
+
+  // Draw on storms map
+  stormsMap.eachLayer(l => { if(l instanceof L.CircleMarker || l instanceof L.Marker) stormsMap.removeLayer(l); });
+  const allCoords = [];
+  const today = new Date();
+  filtered.forEach(ev => {
+    const ageDays = (today - new Date(ev.date)) / 86400000;
+    const opacity = Math.max(0.2, 1 - ageDays / (stormTabDays * 1.2));
+    let marker;
+    if(ev.type === 'hail') {
+      let color = ev.mag >= 2.0 ? '#e03b3b' : ev.mag >= 1.5 ? '#f5a623' : '#f5e623';
+      let radius = ev.mag >= 2.0 ? 14 : ev.mag >= 1.5 ? 10 : 7;
+      marker = L.circleMarker([ev.lat, ev.lng], { radius, color, fillColor:color, fillOpacity:opacity*.6, opacity, weight:1.5 });
+    } else if(ev.type === 'wind') {
+      const color = ev.mag >= 75 ? '#0066ff' : '#4a9eff';
+      marker = L.marker([ev.lat, ev.lng], { icon: L.divIcon({ html:`<div style="width:10px;height:10px;background:${color};transform:rotate(45deg);opacity:${opacity};border:1px solid rgba(255,255,255,.4)"></div>`, iconSize:[10,10], iconAnchor:[5,5], className:'' }) });
+    } else {
+      const color = ev.mag >= 4 ? '#7c3aed' : ev.mag >= 2 ? '#a855f7' : '#d4a0ff';
+      marker = L.marker([ev.lat, ev.lng], { icon: L.divIcon({ html:`<div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:13px solid ${color};opacity:${Math.max(opacity,.4)}"></div>`, iconSize:[14,13], iconAnchor:[7,13], className:'' }) });
+    }
+    if(marker) { marker.addTo(stormsMap); allCoords.push([ev.lat, ev.lng]); }
+  });
+
+  // Show user position on storm map
+  if(userPos) {
+    L.marker([userPos.lat, userPos.lng], {
+      icon: L.divIcon({ html:'<div class="you-ring"></div>', iconSize:[16,16], iconAnchor:[8,8], className:'' }),
+      zIndexOffset: 9999
+    }).addTo(stormsMap);
+    // Center on user
+    if(allCoords.length > 0) {
+      // Find events within 100mi and fit to those
+      const nearby = filtered.filter(e => e.distKm && e.distKm < 160);
+      if(nearby.length > 0) {
+        const nearCoords = nearby.map(e => [e.lat, e.lng]);
+        nearCoords.push([userPos.lat, userPos.lng]);
+        stormsMap.fitBounds(L.latLngBounds(nearCoords), { padding:[20,20] });
+      } else {
+        stormsMap.setView([userPos.lat, userPos.lng], 7);
+      }
+    } else {
+      stormsMap.setView([userPos.lat, userPos.lng], 8);
+    }
+  } else if(allCoords.length > 0) {
+    stormsMap.fitBounds(L.latLngBounds(allCoords), { padding:[20,20] });
+  }
+
+  // Build list — show nearest first
+  if(!filtered.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">🌤️</div><div class="empty-text">No storm events found<br>in this time range.</div></div>';
+    return;
+  }
+
+  // Show nearby first with a divider, then further away
+  const nearby50 = filtered.filter(e => !e.distKm || e.distKm < 80);
+  const farther  = filtered.filter(e => e.distKm && e.distKm >= 80);
+
+  function makeEventCard(ev) {
+    const card = document.createElement('div');
+    card.className = 'storm-event-card';
+    let icon, sizeLabel, color;
+    if(ev.type === 'hail') {
+      icon = '⛈️';
+      const sizeNames = ev.mag >= 2.75 ? 'baseball' : ev.mag >= 1.75 ? 'golf ball' : ev.mag >= 1.5 ? 'ping pong' : ev.mag >= 1.0 ? 'quarter' : 'penny';
+      sizeLabel = ev.mag + '" — ' + sizeNames;
+      color = ev.mag >= 2.0 ? '#e03b3b' : ev.mag >= 1.5 ? '#f5a623' : '#f5e623';
+    } else if(ev.type === 'wind') {
+      icon = '💨';
+      sizeLabel = ev.mag + 'mph wind';
+      color = ev.mag >= 75 ? '#0066ff' : '#4a9eff';
+    } else {
+      icon = '🌪️';
+      sizeLabel = 'EF' + (ev.mag || '0') + ' Tornado';
+      color = '#a855f7';
+    }
+    const distStr = ev.distKm ? Math.round(milesFromKm(ev.distKm)) + ' mi away' : '';
+    card.innerHTML = `
+      <div class="storm-event-icon">${icon}</div>
+      <div class="storm-event-info">
+        <div class="storm-event-size" style="color:${color}">${sizeLabel}</div>
+        <div class="storm-event-loc">${ev.location}${ev.county ? ', ' + ev.county : ''}, ${ev.state}</div>
+        <div class="storm-event-date">${formatDate(ev.date)}</div>
+      </div>
+      ${distStr ? `<div class="storm-event-dist" style="color:#555">${distStr}</div>` : ''}
+    `;
+    card.addEventListener('click', () => {
+      if(stormsMap) stormsMap.setView([ev.lat, ev.lng], 12);
+      document.getElementById('storms-list').scrollIntoView({ behavior:'smooth' });
+    });
+    return card;
+  }
+
+  if(nearby50.length > 0) {
+    if(userPos) {
+      const hdr = document.createElement('div');
+      hdr.style.cssText = 'font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#e03b3b;margin-bottom:8px';
+      hdr.textContent = '📍 Near You (' + nearby50.length + ')';
+      list.appendChild(hdr);
+    }
+    nearby50.forEach(ev => list.appendChild(makeEventCard(ev)));
+  }
+
+  if(farther.length > 0 && userPos) {
+    const hdr2 = document.createElement('div');
+    hdr2.style.cssText = 'font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#333;margin:14px 0 8px';
+    hdr2.textContent = 'Further Away (' + farther.length + ')';
+    list.appendChild(hdr2);
+    farther.slice(0, 50).forEach(ev => list.appendChild(makeEventCard(ev))); // cap at 50
+    if(farther.length > 50) {
+      const more = document.createElement('div');
+      more.style.cssText = 'text-align:center;font-size:12px;color:#333;padding:12px';
+      more.textContent = (farther.length - 50) + ' more events not shown';
+      list.appendChild(more);
+    }
+  }
+}
+
 // ── Coverage date filter ───────────────────────────────────────────
 let covDays = 30;
 
@@ -1934,6 +2195,7 @@ document.getElementById('historyBtn').addEventListener('click',()=>{
 document.getElementById('hist-close').addEventListener('click',()=>{
   document.getElementById('hist-panel').classList.remove('open');
   document.getElementById('coverage-add-btn').classList.remove('show');
+  const sw = document.getElementById('storms-wrap'); if(sw) sw.style.display='none';
 });
 document.querySelectorAll('.htab').forEach(tab=>{
   tab.addEventListener('click',()=>{
@@ -1945,6 +2207,19 @@ document.querySelectorAll('.htab').forEach(tab=>{
 function renderHistTab(tab){
   const body=document.getElementById('hist-body');
   const cov=document.getElementById('coverage-wrap');
+  const stormsWrap = document.getElementById('storms-wrap');
+
+  if(tab==='storms'){
+    body.style.display='none';
+    cov.classList.remove('active');
+    document.getElementById('coverage-add-btn').classList.remove('show');
+    stormsWrap.style.display='flex';
+    setTimeout(renderStormsTab, 50);
+    return;
+  }
+
+  stormsWrap.style.display='none';
+
   if(tab==='coverage'){
     body.style.display='none';cov.classList.add('active');document.getElementById('coverage-add-btn').classList.add('show');setTimeout(()=>{ initCoverageMap(); },50);return;
   }

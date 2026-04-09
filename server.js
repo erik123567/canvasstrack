@@ -525,6 +525,66 @@ app.get('/api/stats', requireAuth, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+// ── Route Cleanup (OSRM Map Matching) ────────────────────────────
+app.post('/api/sessions/:id/snap', requireAuth, async (req, res) => {
+  try {
+    const session = db.getUserSessions(req.userId).find(s => s.id === req.params.id);
+    if(!session) return res.status(404).json({ error: 'Session not found' });
+
+    const coords = session.coords;
+    if(!coords || coords.length < 2)
+      return res.status(400).json({ error: 'Not enough GPS points to snap' });
+
+    // OSRM match API — free, no key needed
+    // Chunk into batches of 100 (OSRM limit per request)
+    const CHUNK = 100;
+    const snapped = [];
+
+    for(let i = 0; i < coords.length; i += CHUNK) {
+      const chunk = coords.slice(i, Math.min(i + CHUNK, coords.length));
+      // OSRM format: lng,lat;lng,lat (note: longitude first)
+      const coordStr  = chunk.map(c => `${c.lng},${c.lat}`).join(';');
+      const radiusStr = chunk.map(() => '35').join(';'); // 35m GPS tolerance
+
+      const url = `https://router.project-osrm.org/match/v1/driving/${coordStr}` +
+        `?overview=full&geometries=geojson&radiuses=${radiusStr}&tidy=true`;
+
+      try {
+        const data = await fetchJSON(url);
+        if(data.code !== 'Ok' || !data.matchings?.length) {
+          // OSRM couldn't snap this chunk — keep original points
+          chunk.forEach(c => snapped.push(c));
+          continue;
+        }
+        // Extract snapped coordinates from all matchings
+        for(const matching of data.matchings) {
+          const pts = matching.geometry.coordinates; // [lng, lat] pairs
+          pts.forEach((pt, idx) => {
+            snapped.push({
+              lat: pt[1],
+              lng: pt[0],
+              recorded_at: chunk[Math.min(idx, chunk.length-1)].recorded_at
+            });
+          });
+        }
+      } catch(e) {
+        // OSRM failed for this chunk — keep originals
+        console.log('OSRM chunk failed:', e.message);
+        chunk.forEach(co => snapped.push(co));
+      }
+    }
+
+    // Save snapped coords back to DB
+    db.replaceSessionCoords(session.id, snapped);
+    res.json({ snapped: snapped.length, original: coords.length });
+
+  } catch(e) {
+    console.error('Snap error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 

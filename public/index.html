@@ -666,10 +666,10 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   <button class="storm-type-btn active" data-stype="wind" style="color:#4a9eff;border-color:#4a9eff66">💨</button>
   <button class="storm-type-btn active" data-stype="tornado" style="color:#a855f7;border-color:#a855f766">🌪️</button>
   <div style="width:1px;height:20px;background:#222;margin:0 2px"></div>
-  <button class="storm-days-btn active" data-days="7">7d</button>
-  <button class="storm-days-btn" data-days="14">14d</button>
-  <button class="storm-days-btn" data-days="30">30d</button>
+  <button class="storm-days-btn active" data-days="30">30d</button>
   <button class="storm-days-btn" data-days="90">90d</button>
+  <button class="storm-days-btn" data-days="180">6mo</button>
+  <button class="storm-days-btn" data-days="365">1yr</button>
   <span id="storm-loading" style="font-size:12px;color:#f5a623;display:none">⟳</span>
   <button id="storm-close-btn" style="background:none;border:none;color:#555;font-size:16px;cursor:pointer;padding:0 0 0 2px">✕</button>
 </div>
@@ -1481,7 +1481,7 @@ document.getElementById('forgot-submit').addEventListener('click', async ()=>{
 
 
 // ── Storm Overlay ─────────────────────────────────────────────────
-let stormMarkers = [], stormDays = 7, stormVisible = false;
+let stormMarkers = [], stormDays = 30, stormVisible = false;
 let activeStormTypes = new Set(['hail','wind','tornado']);
 
 document.getElementById('stormBtn').addEventListener('click', () => {

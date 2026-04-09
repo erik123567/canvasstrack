@@ -2630,6 +2630,10 @@ document.getElementById('bsave').addEventListener('click',async()=>{
   const notes=document.getElementById('notes').value.trim();
   const status=selStatus||'Dropped Lit';
   const photo=pendingPhoto||null;
+  const interaction_date=document.getElementById('interaction-date-input').value||new Date().toISOString().split('T')[0];
+  const owner_name=document.getElementById('owner-name-input').value.trim()||null;
+  const phone=document.getElementById('phone-input').value.trim()||null;
+  const followup_date=document.getElementById('followup-input').value||null;
 
   if(editingPin){
     // UPDATE existing pin

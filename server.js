@@ -356,6 +356,27 @@ app.get('/api/storm/events', async (req, res) => {
   }
 });
 
+
+// Debug endpoint — check what IEM actually returns
+app.get('/api/storm/debug', async (req, res) => {
+  try {
+    const ets = new Date();
+    const sts = new Date(Date.now() - 7 * 86400000);
+    const toISO = d => d.toISOString().split('.')[0] + 'Z';
+    const url = 'https://mesonet.agron.iastate.edu/geojson/lsrs.geojson?sts=' + toISO(sts) + '&ets=' + toISO(ets) + '&wfo=DMX';
+    const raw = await new Promise((resolve, reject) => {
+      const req2 = require('https').get(url, { headers: { 'User-Agent': 'CanvassTrack/1.0' } }, r => {
+        let d = '';
+        r.on('data', chunk => d += chunk);
+        r.on('end', () => resolve({ status: r.statusCode, body: d.slice(0, 500), contentType: r.headers['content-type'] }));
+      });
+      req2.on('error', e => reject(e));
+      req2.setTimeout(10000, () => { req2.destroy(); reject(new Error('timeout')); });
+    });
+    res.json(raw);
+  } catch(e) { res.json({ error: e.message }); }
+});
+
 app.get('/api/storm/hail', (req, res) => res.redirect('/api/storm/events?' + new URLSearchParams(req.query).toString()));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));

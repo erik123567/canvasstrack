@@ -341,12 +341,13 @@ app.get('/api/storm/events', async (req, res) => {
     const sts = new Date(now - 90 * 86400000);
     const toISOSimple = d => d.toISOString().split('.')[0] + 'Z';
 
-    // IEM LSR API — one request for 90 days, all types
-    // wfo=ALL gets nationwide data
-    const url = 'https://mesonet.agron.iastate.edu/geojson/lsrs.geojson' +
+    // IEM LSR API — correct endpoint is lsr.geojson (no 's')
+    // Filter to storm-damage types only: H=hail, T=tornado, D=wind damage, G=wind gust
+    // Nationwide, 90 days
+    const url = 'https://mesonet.agron.iastate.edu/geojson/lsr.geojson' +
       '?sts=' + toISOSimple(sts) +
       '&ets=' + toISOSimple(ets) +
-      '&wfo=ALL';
+      '&type=H&type=T&type=D&type=G';
 
     console.log('Fetching IEM storm data...');
     const geojson = await fetchJSON(url);
@@ -377,7 +378,7 @@ app.get('/api/storm/debug', async (req, res) => {
     const ets = new Date();
     const sts = new Date(Date.now() - 7 * 86400000);
     const toISO = d => d.toISOString().split('.')[0] + 'Z';
-    const url = 'https://mesonet.agron.iastate.edu/geojson/lsrs.geojson?sts=' + toISO(sts) + '&ets=' + toISO(ets) + '&wfo=DMX';
+    const url = 'https://mesonet.agron.iastate.edu/geojson/lsr.geojson?sts=' + toISO(sts) + '&ets=' + toISO(ets) + '&type=H&type=T&type=D&type=G';
     const raw = await new Promise((resolve, reject) => {
       const req2 = require('https').get(url, { headers: { 'User-Agent': 'CanvassTrack/1.0' } }, r => {
         let d = '';

@@ -380,6 +380,55 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 #confirm-cancel { width:100%; padding:15px; background:#1c1c1c; color:#666; border:none; border-radius:13px; font-size:15px; cursor:pointer; }
 
 
+
+/* ── Storm overlay ── */
+#storm-bar {
+  position: fixed; bottom: 160px; left: 50%; transform: translateX(-50%);
+  z-index: 201; display: none; align-items: center; gap: 8px;
+  background: rgba(0,0,0,.88); backdrop-filter: blur(10px);
+  padding: 9px 14px; border-radius: 30px;
+  border: 1px solid rgba(255,255,255,.12);
+  white-space: nowrap;
+}
+#storm-bar.show { display: flex; }
+.storm-type-btn {
+  padding: 4px 9px; border-radius: 14px; font-size: 14px;
+  border: 1.5px solid transparent; cursor: pointer; background: transparent;
+  transition: all .15s; opacity: .35;
+}
+.storm-type-btn.active { opacity: 1; background: rgba(255,255,255,.06); }
+.storm-days-btn {
+  padding: 5px 11px; border-radius: 16px; font-size: 12px; font-weight: 800;
+  border: 1.5px solid transparent; cursor: pointer; background: transparent;
+  color: #555; transition: all .15s;
+}
+.storm-days-btn.active { border-color: #e03b3b; color: #e03b3b; background: rgba(224,59,59,.1); }
+#storm-loading { font-size: 12px; color: #f5a623; display: none; }
+
+/* ── Coverage date filter ── */
+#cov-filter {
+  position: absolute; top: 12px; left: 12px; z-index: 1000;
+  display: flex; gap: 5px; flex-wrap: wrap;
+}
+.cov-day-btn {
+  padding: 5px 10px; border-radius: 14px; font-size: 11px; font-weight: 800;
+  border: 1.5px solid rgba(255,255,255,.2); cursor: pointer;
+  background: rgba(0,0,0,.8); color: #555; transition: all .15s;
+  backdrop-filter: blur(8px);
+}
+.cov-day-btn.active { border-color: #f5a623; color: #f5a623; background: rgba(0,0,0,.9); }
+
+/* Storm legend */
+#storm-legend {
+  position: absolute; bottom: 12px; left: 12px; z-index: 1000;
+  background: rgba(0,0,0,.82); border-radius: 10px; padding: 8px 12px;
+  font-size: 11px; display: none; flex-direction: column; gap: 4px;
+  border: 1px solid rgba(255,255,255,.1);
+}
+#storm-legend.show { display: flex; }
+.legend-row { display: flex; align-items: center; gap: 7px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
 /* ── Map status filter ── */
 #map-filter {
   position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
@@ -588,6 +637,20 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 
 <button id="follow-btn" title="Re-center on my location">◎</button>
 
+<!-- Storm controls -->
+<div id="storm-bar">
+  <button class="storm-type-btn active" data-stype="hail" style="color:#f5e623;border-color:#f5e62366">⛈️</button>
+  <button class="storm-type-btn active" data-stype="wind" style="color:#4a9eff;border-color:#4a9eff66">💨</button>
+  <button class="storm-type-btn active" data-stype="tornado" style="color:#a855f7;border-color:#a855f766">🌪️</button>
+  <div style="width:1px;height:20px;background:#222;margin:0 2px"></div>
+  <button class="storm-days-btn active" data-days="7">7d</button>
+  <button class="storm-days-btn" data-days="14">14d</button>
+  <button class="storm-days-btn" data-days="30">30d</button>
+  <button class="storm-days-btn" data-days="90">90d</button>
+  <span id="storm-loading" style="font-size:12px;color:#f5a623;display:none">⟳</span>
+  <button id="storm-close-btn" style="background:none;border:none;color:#555;font-size:16px;cursor:pointer;padding:0 0 0 2px">✕</button>
+</div>
+
 <!-- Map filter bar -->
 <div id="map-filter">
   <button class="filt-btn active" data-status="all" style="color:#fff;border-color:rgba(255,255,255,.3)">All</button>
@@ -622,6 +685,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   <button class="icon-btn" id="settingsBtn">⚙️</button>
   <button id="trackBtn">▶ Start Tracking</button>
   <button class="icon-btn" id="historyBtn">📋</button>
+  <button class="icon-btn" id="stormBtn" title="Storm data">⛈️</button>
   <button class="icon-btn" id="filterBtn" title="Filter pins">🔍</button>
   <button class="icon-btn" id="pinBtn">📍</button>
 </div>
@@ -712,7 +776,27 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   <div id="hist-body"></div>
   <div id="coverage-wrap">
     <div id="coverage-map"></div>
+    <div id="cov-filter">
+      <button class="cov-day-btn active" data-cdays="30">30 days</button>
+      <button class="cov-day-btn" data-cdays="90">90 days</button>
+      <button class="cov-day-btn" data-cdays="365">1 year</button>
+      <button class="cov-day-btn" data-cdays="9999">All time</button>
+    </div>
     <div id="coverage-hint-text">Your routes + shared routes</div>
+    <div id="storm-legend">
+      <div style="font-size:10px;color:#888;font-weight:800;letter-spacing:1px;text-transform:uppercase;margin-bottom:5px">Storm Events</div>
+      <div style="font-size:10px;color:#666;margin-bottom:3px;font-weight:700">⛈️ HAIL (circles)</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#f5e623"></div><span style="color:#ccc">1.0–1.5" quarter</span></div>
+      <div class="legend-row"><div class="legend-dot" style="background:#f5a623"></div><span style="color:#ccc">1.5–2.0" golf ball</span></div>
+      <div class="legend-row"><div class="legend-dot" style="background:#e03b3b"></div><span style="color:#ccc">2.0"+ baseball</span></div>
+      <div style="font-size:10px;color:#666;margin:5px 0 3px;font-weight:700">💨 WIND (diamonds)</div>
+      <div class="legend-row"><div style="width:10px;height:10px;background:#4a9eff;transform:rotate(45deg);flex-shrink:0"></div><span style="color:#ccc">50–65kt (~58–75mph)</span></div>
+      <div class="legend-row"><div style="width:10px;height:10px;background:#0066ff;transform:rotate(45deg);flex-shrink:0"></div><span style="color:#ccc">65kt+ (~75mph+)</span></div>
+      <div style="font-size:10px;color:#666;margin:5px 0 3px;font-weight:700">🌪️ TORNADO (triangles)</div>
+      <div class="legend-row"><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #d4a0ff;flex-shrink:0"></div><span style="color:#ccc">EF0–EF1</span></div>
+      <div class="legend-row"><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #a855f7;flex-shrink:0"></div><span style="color:#ccc">EF2–EF3</span></div>
+      <div class="legend-row"><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #7c3aed;flex-shrink:0"></div><span style="color:#ccc">EF4–EF5</span></div>
+    </div>
   </div>
 </div>
 
@@ -1353,6 +1437,142 @@ document.getElementById('forgot-submit').addEventListener('click', async ()=>{
 });
 
 
+
+// ── Storm Overlay ─────────────────────────────────────────────────
+let stormMarkers = [], stormDays = 7, stormVisible = false;
+let activeStormTypes = new Set(['hail','wind','tornado']);
+
+document.getElementById('stormBtn').addEventListener('click', () => {
+  if(stormVisible){ hideStorm(); return; }
+  document.getElementById('storm-bar').classList.add('show');
+  stormVisible = true;
+  loadStorm();
+});
+
+document.getElementById('storm-close-btn').addEventListener('click', hideStorm);
+
+function hideStorm(){
+  stormVisible = false;
+  document.getElementById('storm-bar').classList.remove('show');
+  document.getElementById('storm-legend').classList.remove('show');
+  stormMarkers.forEach(m => map.removeLayer(m));
+  stormMarkers = [];
+}
+
+// Type toggles
+document.querySelectorAll('.storm-type-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const t = btn.dataset.stype;
+    if(activeStormTypes.has(t)){ activeStormTypes.delete(t); btn.classList.remove('active'); }
+    else { activeStormTypes.add(t); btn.classList.add('active'); }
+    if(stormVisible) loadStorm();
+  });
+});
+
+// Day range
+document.querySelectorAll('.storm-days-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.storm-days-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    stormDays = parseInt(btn.dataset.days);
+    if(stormVisible) loadStorm();
+  });
+});
+
+async function loadStorm(){
+  const loadEl = document.getElementById('storm-loading');
+  loadEl.style.display = 'block';
+  stormMarkers.forEach(m => map.removeLayer(m));
+  stormMarkers = [];
+  try{
+    const events = await api.get('/api/storm/events?days=' + stormDays);
+    loadEl.style.display = 'none';
+    if(!events || events.error){ toast('Could not load storm data', 3000); return; }
+
+    const today = new Date();
+    let counts = { hail:0, wind:0, tornado:0 };
+
+    events.forEach(ev => {
+      if(!activeStormTypes.has(ev.type)) return;
+      counts[ev.type] = (counts[ev.type]||0) + 1;
+
+      const ageDays = (today - new Date(ev.date)) / 86400000;
+      const opacity = Math.max(0.2, 1 - ageDays / (stormDays * 1.2));
+      let marker;
+
+      if(ev.type === 'hail'){
+        let color, radius;
+        if(ev.mag >= 2.0)     { color='#e03b3b'; radius=16; }
+        else if(ev.mag >= 1.5){ color='#f5a623'; radius=11; }
+        else                  { color='#f5e623'; radius=7; }
+        marker = L.circleMarker([ev.lat, ev.lng], {
+          radius, color, fillColor:color,
+          fillOpacity: opacity*.65, opacity, weight:1.5
+        }).bindPopup(`
+          <div style="min-width:160px">
+            <div style="font-weight:800;font-size:14px;margin-bottom:3px">⛈️ ${ev.mag}" Hail</div>
+            <div style="color:#aaa;font-size:12px">${ev.location}${ev.county?', '+ev.county:''}, ${ev.state}</div>
+            <div style="color:#f5a623;font-size:12px;margin-top:4px">${formatDate(ev.date)}</div>
+          </div>`);
+
+      } else if(ev.type === 'wind'){
+        const color = ev.mag >= 65 ? '#0066ff' : '#4a9eff';
+        const mph = Math.round(ev.mag * 1.15078);
+        // Diamond shape using rotated square divIcon
+        const iconHtml = `<div style="width:12px;height:12px;background:${color};transform:rotate(45deg);opacity:${opacity};border:1.5px solid rgba(255,255,255,.4)"></div>`;
+        marker = L.marker([ev.lat, ev.lng], {
+          icon: L.divIcon({ html:iconHtml, iconSize:[12,12], iconAnchor:[6,6], className:'' })
+        }).bindPopup(`
+          <div style="min-width:160px">
+            <div style="font-weight:800;font-size:14px;margin-bottom:3px">💨 ${ev.mag}kt Wind (${mph}mph)</div>
+            <div style="color:#aaa;font-size:12px">${ev.location}${ev.county?', '+ev.county:''}, ${ev.state}</div>
+            <div style="color:#4a9eff;font-size:12px;margin-top:4px">${formatDate(ev.date)}</div>
+          </div>`);
+
+      } else if(ev.type === 'tornado'){
+        const ef = ev.mag;
+        let color;
+        if(ef >= 4)      color='#7c3aed';
+        else if(ef >= 2) color='#a855f7';
+        else             color='#d4a0ff';
+        const label = ef === 0 ? 'EF0' : `EF${ef}`;
+        // Triangle using CSS borders
+        const iconHtml = `<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid ${color};opacity:${Math.max(opacity,.4)};filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))"></div>`;
+        marker = L.marker([ev.lat, ev.lng], {
+          icon: L.divIcon({ html:iconHtml, iconSize:[16,14], iconAnchor:[8,14], className:'' })
+        }).bindPopup(`
+          <div style="min-width:160px">
+            <div style="font-weight:800;font-size:14px;margin-bottom:3px">🌪️ ${label} Tornado</div>
+            <div style="color:#aaa;font-size:12px">${ev.location}${ev.county?', '+ev.county:''}, ${ev.state}</div>
+            <div style="color:#a855f7;font-size:12px;margin-top:4px">${formatDate(ev.date)}</div>
+          </div>`);
+      }
+
+      if(marker){ marker.addTo(map); stormMarkers.push(marker); }
+    });
+
+    document.getElementById('storm-legend').classList.add('show');
+    const parts = [];
+    if(counts.hail)    parts.push(`${counts.hail} hail`);
+    if(counts.wind)    parts.push(`${counts.wind} wind`);
+    if(counts.tornado) parts.push(`${counts.tornado} tornado`);
+    toast(parts.length ? parts.join(' · ') + ` events (${stormDays}d)` : `No events in last ${stormDays} days`, 3000);
+
+  } catch(e){ loadEl.style.display='none'; toast('Storm data unavailable', 3000); }
+}
+
+// ── Coverage date filter ───────────────────────────────────────────
+let covDays = 30;
+
+document.querySelectorAll('.cov-day-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.cov-day-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    covDays = parseInt(btn.dataset.cdays);
+    initCoverageMap();
+  });
+});
+
 // ── Map status filter ─────────────────────────────────────────────
 let activeFilters = new Set(['all','Dropped Lit','No Answer','Spoke to Owner','Interested','Appointment']);
 
@@ -1863,14 +2083,39 @@ function initCoverageMap(){
 
   const allCoords = [];
 
-  // My own routes — orange
-  sessions.forEach(s=>{
-    if(s.coords && s.coords.length > 1){
-      const lls = s.coords.map(c=>[c.lat,c.lng]);
-      L.polyline(lls, {color:'#f5a623', weight:5, opacity:.9}).addTo(coverageMap);
-      lls.forEach(ll=>allCoords.push(ll));
-    }
-  });
+  // My own routes — colored and faded by age
+  const now = Date.now();
+  const cutoff = new Date(now - covDays * 86400000).toISOString();
+  sessions
+    .filter(s => !covDays || covDays >= 9999 || (s.started_at >= cutoff))
+    .forEach(s=>{
+      if(s.coords && s.coords.length > 1){
+        const lls = s.coords.map(c=>[c.lat,c.lng]);
+        const ageDays = (now - new Date(s.started_at)) / 86400000;
+        // Color: fresh=orange, medium=yellow, old=grey
+        let color, opacity;
+        if(ageDays <= 30)      { color='#f5a623'; opacity=.95; }
+        else if(ageDays <= 90) { color='#a87a1a'; opacity=.6; }
+        else                   { color='#555'; opacity=.4; }
+        L.polyline(lls, {color, weight:4, opacity}).addTo(coverageMap);
+        lls.forEach(ll=>allCoords.push(ll));
+      }
+    });
+
+  // Age legend
+  const existingLegend = coverageMap.getContainer().querySelector('.cov-age-legend');
+  if(!existingLegend){
+    const legendDiv = document.createElement('div');
+    legendDiv.className='cov-age-legend';
+    legendDiv.style.cssText='position:absolute;bottom:40px;right:12px;z-index:1000;background:rgba(0,0,0,.82);border-radius:10px;padding:8px 12px;font-size:11px;border:1px solid rgba(255,255,255,.1)';
+    legendDiv.innerHTML=`
+      <div style="font-size:10px;color:#888;font-weight:800;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Route Age</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><div style="width:24px;height:3px;background:#f5a623;border-radius:2px"></div><span style="color:#ccc">0–30 days</span></div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><div style="width:24px;height:3px;background:#a87a1a;border-radius:2px"></div><span style="color:#ccc">30–90 days</span></div>
+      <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:3px;background:#555;border-radius:2px"></div><span style="color:#ccc">90+ days</span></div>
+    `;
+    coverageMap.getContainer().appendChild(legendDiv);
+  }
 
   // Shared/imported routes — dashed in different colors
   importedRoutes.forEach((r,i)=>{

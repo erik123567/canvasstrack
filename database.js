@@ -139,6 +139,8 @@ const getImportedPins    = db.prepare(`
   JOIN imported_routes ir ON ir.session_id = p.session_id
   WHERE ir.user_id = ?
 `);
+const replaceSessionCoords = db.prepare(`DELETE FROM coords WHERE session_id = ?`);
+const replaceSessionCoords2 = db.prepare(`INSERT INTO coords (session_id, lat, lng, recorded_at) VALUES (?, ?, ?, ?)`);
 const removeImportedRoute = db.prepare(`DELETE FROM imported_routes WHERE user_id = ? AND session_id = ?`);
 
 // ── Legacy migration ──────────────────────────────────────────────
@@ -196,4 +198,11 @@ module.exports = {
   })),
   getImportedPins:  (userId) => getImportedPins.all(userId),
   removeImportedRoute: (userId, sessionId) => removeImportedRoute.run(userId, sessionId),
+  replaceSessionCoords: (sessionId, coords) => {
+    replaceSessionCoords.run(sessionId);
+    const insert = db.transaction(() => {
+      for(const c of coords) replaceSessionCoords2.run(sessionId, c.lat, c.lng, c.recorded_at || new Date().toISOString());
+    });
+    insert();
+  },
 };

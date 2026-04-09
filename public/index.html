@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>CanvassTrack</title>
+<meta name="description" content="Roofing Sales Canvassing">
+<meta name="theme-color" content="#f5a623">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CanvassTrack">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
 <!-- PWA -->
 <link rel="manifest" href="/manifest.json">
@@ -1417,7 +1424,8 @@ function startT(){
     watchId=navigator.geolocation.watchPosition(onPos,onPosErr,{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
     followMode=true;
     document.getElementById('trackBtn').disabled=false;
-    toast('Tracking • tap map or 📍 to log a stop');
+    requestWakeLock();
+    toast('Tracking • screen will stay on for GPS accuracy');
   },err=>{
     const m={1:'Location denied — Settings → Privacy → Location Services',2:'GPS unavailable',3:'GPS timed out'};
     document.getElementById('trackBtn').textContent='▶ Start Tracking';
@@ -1461,6 +1469,9 @@ async function stopT(){
     try{await api.patch(`/api/sessions/${curSession.id}/end`);}catch(e){}
     sessions.push({...curSession});if(curLine)allLines.push(curLine);
     toast(`Route saved — ${curSession.coords.length} points`);
+    // Auto-snap route to roads in background
+    const savedId = curSession.id;
+    setTimeout(() => snapRouteBackground(savedId), 1000);
   }
   tracking=false;curSession=null;curLine=null;startTime=null;coordBuffer=[];
   document.getElementById('trackBtn').textContent='▶ Start Tracking';
@@ -1470,6 +1481,7 @@ async function stopT(){
   document.getElementById('timer').textContent='';
   document.getElementById('pinBtn').classList.remove('show');
   followMode=true; showFollowBtn(false);
+  releaseWakeLock();
 }
 
 function tickTimer(){
@@ -2165,6 +2177,66 @@ async function renderStormsTab() {
   }
 }
 
+
+// ── Route Snap (Map Matching) ────────────────────────────────────
+
+// Auto-snap after stop — runs silently in background
+async function snapRouteBackground(sessionId) {
+  try {
+    const res = await api.post('/api/sessions/' + sessionId + '/snap', {});
+    if(res.snapped) {
+      // Reload sessions to get clean coords
+      const [sessData, pinData, sharedData] = await Promise.all([
+        api.get('/api/sessions'),
+        api.get('/api/pins'),
+        api.get('/api/coverage/shared').catch(()=>({sessions:[],pins:[]}))
+      ]);
+      sessions       = sessData  || [];
+      pins           = pinData   || [];
+      importedRoutes = sharedData.sessions || [];
+      importedPins   = sharedData.pins     || [];
+      renderAll();
+      toast(`🛣 Route snapped to roads (${res.snapped} pts)`);
+    }
+  } catch(e) {
+    // Silent fail — raw route stays, no disruption to user
+    console.log('Auto-snap failed:', e.message);
+  }
+}
+
+async function snapRoute(sessionId, cardEl) {
+  const btn = cardEl.querySelector('.snap-btn');
+  const orig = btn.textContent;
+  btn.textContent = 'Fixing…';
+  btn.disabled = true;
+
+  try {
+    const res = await api.post('/api/sessions/' + sessionId + '/snap', {});
+    if(res.error) {
+      toast(res.error, 3000);
+    } else {
+      toast(`✓ Route cleaned — ${res.snapped} road-snapped points (was ${res.original})`);
+      // Reload sessions to get updated coords
+      const [sessData, pinData, sharedData] = await Promise.all([
+        api.get('/api/sessions'),
+        api.get('/api/pins'),
+        api.get('/api/coverage/shared').catch(()=>({sessions:[],pins:[]}))
+      ]);
+      sessions       = sessData  || [];
+      pins           = pinData   || [];
+      importedRoutes = sharedData.sessions || [];
+      importedPins   = sharedData.pins     || [];
+      renderAll();
+      renderHistTab('routes');
+    }
+  } catch(e) {
+    toast('Could not clean route', 3000);
+  }
+
+  btn.textContent = orig;
+  btn.disabled = false;
+}
+
 // ── Coverage date filter ───────────────────────────────────────────
 let covDays = 30;
 
@@ -2251,6 +2323,71 @@ function applyFilter(){
   });
 }
 
+
+
+// ── Wake Lock (keep screen on while tracking) ─────────────────────
+let wakeLock = null;
+
+async function requestWakeLock() {
+  // Wake Lock API — prevents screen from sleeping
+  if ('wakeLock' in navigator) {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => {
+        // Screen lock was released externally (e.g. battery saver)
+        // Try to reacquire if still tracking
+        if(tracking) requestWakeLock();
+      });
+      console.log('Wake lock acquired');
+    } catch(e) {
+      console.log('Wake lock failed:', e.message);
+      // Fallback: silent audio loop
+      startSilentAudio();
+    }
+  } else {
+    // iOS doesn't support Wake Lock API yet — use silent audio fallback
+    startSilentAudio();
+  }
+}
+
+function releaseWakeLock() {
+  if(wakeLock) { wakeLock.release(); wakeLock = null; }
+  stopSilentAudio();
+}
+
+// Silent audio fallback for iOS — prevents suspension
+let silentAudio = null;
+function startSilentAudio() {
+  if(silentAudio) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001; // essentially silent
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start();
+    silentAudio = { ctx, oscillator };
+    console.log('Silent audio started for GPS keep-alive');
+  } catch(e) {
+    console.log('Silent audio failed:', e.message);
+  }
+}
+
+function stopSilentAudio() {
+  if(silentAudio) {
+    try { silentAudio.oscillator.stop(); silentAudio.ctx.close(); }
+    catch(e) {}
+    silentAudio = null;
+  }
+}
+
+// Re-acquire wake lock when app comes back to foreground
+document.addEventListener('visibilitychange', () => {
+  if(!document.hidden && tracking && !wakeLock) {
+    requestWakeLock();
+  }
+});
 
 // ── Offline Queue ─────────────────────────────────────────────────
 // Coords and pins that failed to sync get stored here and retried
@@ -2745,8 +2882,9 @@ function renderHistTab(tab){
       const coords=s.coords||[];
       const pc=pins.filter(p=>p.session_id===s.id||p.sessionId===s.id).length;
       const card=document.createElement('div');card.className='route-card';
-      card.innerHTML=`<div class="route-swatch" style="background:${s.color||sCol(idx)}"></div><div class="route-info"><div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div><div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} pts · ${pc} pin${pc!==1?'s':''}</div></div><button class="shr-btn" style="background:transparent;border:1px solid #f5a623;color:#f5a623;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:800;cursor:pointer;flex-shrink:0;margin-left:4px">Share</button>`;
+      card.innerHTML=`<div class="route-swatch" style="background:${s.color||sCol(idx)}"></div><div class="route-info"><div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div><div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} pts · ${pc} pin${pc!==1?'s':''}</div></div><div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0"><button class="shr-btn" style="background:transparent;border:1px solid #f5a623;color:#f5a623;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:800;cursor:pointer">Share</button><button class="snap-btn" data-id="${s.id}" style="background:transparent;border:1px solid #00c9a7;color:#00c9a7;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:800;cursor:pointer">↺ Re-snap</button></div>`;
       card.querySelector('.shr-btn').addEventListener('click',e=>{ e.stopPropagation(); shareSession(s.id); });
+      card.querySelector('.snap-btn').addEventListener('click',e=>{ e.stopPropagation(); snapRoute(s.id, card); });
       card.addEventListener('click',()=>{
         document.getElementById('hist-panel').classList.remove('open');
         if(coords.length>1)map.fitBounds(L.latLngBounds(coords.map(c=>[c.lat,c.lng])),{padding:[40,40]});

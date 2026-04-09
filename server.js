@@ -422,6 +422,109 @@ app.get('/api/storm/stats', async (req, res) => {
 
 app.get('/api/storm/hail', (req, res) => res.redirect('/api/storm/events?' + new URLSearchParams(req.query).toString()));
 
+
+// ── Stats ─────────────────────────────────────────────────────────
+app.get('/api/stats', requireAuth, (req, res) => {
+  try {
+    const userId = req.userId;
+    const sessions = db.getUserSessions(userId);
+    const pins     = db.getUserPins(userId);
+    const now      = new Date();
+
+    // Helper: date string YYYY-MM-DD
+    const toDate = d => new Date(d).toISOString().split('T')[0];
+    const todayStr    = now.toISOString().split('T')[0];
+    const weekAgo     = new Date(now - 7  * 86400000).toISOString().split('T')[0];
+    const monthAgo    = new Date(now - 30 * 86400000).toISOString().split('T')[0];
+
+    // ── Today ──
+    const todaySessions = sessions.filter(s => toDate(s.started_at) === todayStr);
+    const todayPins     = pins.filter(p => toDate(p.created_at) === todayStr);
+
+    // ── This week ──
+    const weekSessions = sessions.filter(s => toDate(s.started_at) >= weekAgo);
+    const weekPins     = pins.filter(p => toDate(p.created_at) >= weekAgo);
+
+    // ── This month ──
+    const monthPins    = pins.filter(p => toDate(p.created_at) >= monthAgo);
+
+    // ── Status breakdown helper ──
+    const statusCount = arr => arr.reduce((acc, p) => {
+      acc[p.status || 'Unknown'] = (acc[p.status || 'Unknown'] || 0) + 1;
+      return acc;
+    }, {});
+
+    // ── Daily breakdown for chart (last 30 days) ──
+    const dailyMap = {};
+    for (let d = 29; d >= 0; d--) {
+      const dt = new Date(now - d * 86400000).toISOString().split('T')[0];
+      dailyMap[dt] = { date: dt, pins: 0, interested: 0, appointments: 0, routes: 0 };
+    }
+    pins.filter(p => toDate(p.created_at) >= monthAgo).forEach(p => {
+      const d = toDate(p.created_at);
+      if (dailyMap[d]) {
+        dailyMap[d].pins++;
+        if (p.status === 'Interested')   dailyMap[d].interested++;
+        if (p.status === 'Appointment')  dailyMap[d].appointments++;
+      }
+    });
+    sessions.filter(s => toDate(s.started_at) >= monthAgo).forEach(s => {
+      const d = toDate(s.started_at);
+      if (dailyMap[d]) dailyMap[d].routes++;
+    });
+    const daily = Object.values(dailyMap);
+
+    // ── Conversion rate ──
+    const convRate = arr => {
+      if (!arr.length) return 0;
+      const hot = arr.filter(p => p.status === 'Interested' || p.status === 'Appointment').length;
+      return Math.round((hot / arr.length) * 100);
+    };
+
+    // ── Follow-up stats ──
+    const overdue  = pins.filter(p => p.followup_date && p.followup_date < todayStr).length;
+    const dueToday = pins.filter(p => p.followup_date === todayStr).length;
+    const upcoming = pins.filter(p => p.followup_date && p.followup_date > todayStr).length;
+
+    // ── Best day ──
+    const byDay = {};
+    pins.forEach(p => {
+      const d = toDate(p.created_at);
+      byDay[d] = (byDay[d] || 0) + 1;
+    });
+    const bestDay = Object.entries(byDay).sort((a,b) => b[1]-a[1])[0];
+
+    res.json({
+      today: {
+        routes:      todaySessions.length,
+        pins:        todayPins.length,
+        statuses:    statusCount(todayPins),
+        convRate:    convRate(todayPins),
+      },
+      week: {
+        routes:   weekSessions.length,
+        pins:     weekPins.length,
+        statuses: statusCount(weekPins),
+        convRate: convRate(weekPins),
+      },
+      month: {
+        pins:     monthPins.length,
+        statuses: statusCount(monthPins),
+        convRate: convRate(monthPins),
+      },
+      allTime: {
+        routes:   sessions.length,
+        pins:     pins.length,
+        statuses: statusCount(pins),
+        convRate: convRate(pins),
+        bestDay:  bestDay ? { date: bestDay[0], count: bestDay[1] } : null,
+      },
+      followUps: { overdue, dueToday, upcoming },
+      daily, // 30-day breakdown for chart
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 

@@ -814,7 +814,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
       <div class="legend-row"><div class="legend-dot" style="background:#f5a623"></div><span style="color:#ccc">1.5–2.0" golf ball</span></div>
       <div class="legend-row"><div class="legend-dot" style="background:#e03b3b"></div><span style="color:#ccc">2.0"+ baseball</span></div>
       <div style="font-size:10px;color:#666;margin:5px 0 3px;font-weight:700">💨 WIND (diamonds)</div>
-      <div class="legend-row"><div style="width:10px;height:10px;background:#4a9eff;transform:rotate(45deg);flex-shrink:0"></div><span style="color:#ccc">50–65kt (~58–75mph)</span></div>
+      <div class="legend-row"><div style="width:10px;height:10px;background:#4a9eff;transform:rotate(45deg);flex-shrink:0"></div><span style="color:#ccc">45–65mph</span></div>
       <div class="legend-row"><div style="width:10px;height:10px;background:#0066ff;transform:rotate(45deg);flex-shrink:0"></div><span style="color:#ccc">65kt+ (~75mph+)</span></div>
       <div style="font-size:10px;color:#666;margin:5px 0 3px;font-weight:700">🌪️ TORNADO (triangles)</div>
       <div class="legend-row"><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #d4a0ff;flex-shrink:0"></div><span style="color:#ccc">EF0–EF1</span></div>
@@ -1558,7 +1558,7 @@ async function loadStorm(){
           </div>`);
 
       } else if(ev.type === 'wind'){
-        const color = ev.mag >= 75 ? '#0066ff' : '#4a9eff'; // 75mph+ = dark blue
+        const color = ev.mag >= 65 ? '#0066ff' : '#4a9eff';
         const mph = Math.round(ev.mag); // IEM reports wind in mph already
         // Diamond shape using rotated square divIcon
         const iconHtml = `<div style="width:12px;height:12px;background:${color};transform:rotate(45deg);opacity:${opacity};border:1.5px solid rgba(255,255,255,.4)"></div>`;

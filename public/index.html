@@ -247,7 +247,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 #photo-btn:active { background: #222; }
 
 .sbtns { display: flex; gap: 10px; }
-.bsave { flex:1; padding:15px; background:#f5a623; color:#000; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer; }
+.bsave { flex:1; padding:15px; background:#f5a623; color:#000; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
 .bcancel { padding:15px 18px; background:#1c1c1c; color:#555; border:none; border-radius:12px; font-size:15px; cursor:pointer; }
 
 /* Follow button */
@@ -707,7 +707,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 #pin-confirm-bar {
   position: fixed;
   bottom: 100px; left: 16px; right: 16px;
-  z-index: 500;
+  z-index: 350;
   display: none;
   gap: 10px;
   touch-action: manipulation;

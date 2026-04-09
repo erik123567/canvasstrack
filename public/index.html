@@ -775,6 +775,11 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
       <div class="tag" data-s="Appointment">Appointment</div>
     </div>
 
+    <div class="field-label">Interaction Date</div>
+    <div class="saddr-row" style="margin-bottom:14px">
+      <input type="date" id="interaction-date-input" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:14px;padding:10px 13px;outline:none;color-scheme:dark"/>
+    </div>
+
     <div class="field-label">Owner Name</div>
     <div class="saddr-row" style="margin-bottom:14px">
       <input type="text" id="owner-name-input" placeholder="John Smith" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:14px;padding:10px 13px;outline:none"/>
@@ -989,9 +994,8 @@ function openDetail(pinId){
   notesEl.textContent = pin.notes||'';
   notesEl.style.display = pin.notes ? 'block' : 'none';
 
-  document.getElementById('detail-meta').textContent =
-    d.toLocaleDateString('en-US',{weekday:'short',month:'long',day:'numeric'}) +
-    ' · ' + d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+  const interactionStr = pin.interaction_date ? formatDate(pin.interaction_date) : d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  document.getElementById('detail-meta').textContent = '📅 Interacted: ' + interactionStr;
 
   const photo = document.getElementById('detail-photo');
   if(pin.photo){ photo.src=pin.photo; photo.classList.add('show'); }
@@ -1590,6 +1594,7 @@ function openSheet(latlng, existingPin){
     document.getElementById('sheet-title').textContent='✏️ Edit Stop';
     document.getElementById('delete-pin-btn').classList.add('show');
     document.getElementById('saddr-input').value=existingPin.address||'';
+    document.getElementById('interaction-date-input').value=existingPin.interaction_date||new Date().toISOString().split('T')[0];
     document.getElementById('owner-name-input').value=existingPin.owner_name||'';
     document.getElementById('phone-input').value=existingPin.phone||'';
     document.getElementById('followup-input').value=existingPin.followup_date||'';
@@ -1609,6 +1614,7 @@ function openSheet(latlng, existingPin){
     document.getElementById('sheet-title').textContent='📍 Log this stop';
     document.getElementById('delete-pin-btn').classList.remove('show');
     document.getElementById('saddr-input').value='';
+    document.getElementById('interaction-date-input').value=new Date().toISOString().split('T')[0];
     document.getElementById('owner-name-input').value='';
     document.getElementById('phone-input').value='';
     document.getElementById('followup-input').value='';
@@ -1653,9 +1659,9 @@ document.getElementById('bsave').addEventListener('click',async()=>{
 
   if(editingPin){
     // UPDATE existing pin
-    const updated={...editingPin,address:addr,status,notes,photo,owner_name,phone,followup_date};
+    const updated={...editingPin,address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date};
     try{
-      await api.patch('/api/pins/'+editingPin.id,{address:addr,status,notes,photo,owner_name,phone,followup_date});
+      await api.patch('/api/pins/'+editingPin.id,{address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date});
       // Update local array
       const idx=pins.findIndex(p=>p.id===editingPin.id);
       if(idx>=0)pins[idx]=updated;
@@ -1670,7 +1676,7 @@ document.getElementById('bsave').addEventListener('click',async()=>{
     if(!pendingLL)return;
     const pin={
       id:Date.now()+'',lat:pendingLL.lat,lng:pendingLL.lng,
-      address:addr,status,notes,photo,owner_name,phone,followup_date,
+      address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,
       sessionId:curSession?curSession.id:null
     };
     try{
@@ -1815,7 +1821,7 @@ function renderHistTab(tab){
             ${pin.phone && !isShared ? `<div style="font-size:12px;color:#888">📞 ${pin.phone}</div>` : ''}
             ${pin.followup_date && !isShared ? followupBadge(pin.followup_date) : ''}
             ${isShared ? `<div style="font-size:11px;color:#00c9a7;font-weight:700;margin-top:4px">📤 Shared by ${pin.owner_name||'Partner'}</div>` : ''}
-            <div class="pin-time" style="margin-top:6px">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · ${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
+            <div class="pin-time" style="margin-top:6px">${pin.interaction_date ? '📅 '+formatDate(pin.interaction_date) : d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
           </div>
         </div>
       `;

@@ -74,6 +74,18 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_imported_routes_user ON imported_routes(user_id);
+
+  CREATE TABLE IF NOT EXISTS pin_photos (
+    id         TEXT PRIMARY KEY,
+    pin_id     TEXT NOT NULL,
+    user_id    TEXT NOT NULL,
+    photo      TEXT NOT NULL,
+    caption    TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (pin_id)   REFERENCES pins(id),
+    FOREIGN KEY (user_id)  REFERENCES users(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_pin_photos_pin ON pin_photos(pin_id);
 `);
 
 // Migrate existing tables if upgrading from no-auth version
@@ -141,6 +153,11 @@ const getImportedPins    = db.prepare(`
 `);
 const replaceSessionCoords = db.prepare(`DELETE FROM coords WHERE session_id = ?`);
 const replaceSessionCoords2 = db.prepare(`INSERT INTO coords (session_id, lat, lng, recorded_at) VALUES (?, ?, ?, ?)`);
+// ── Pin Photos ────────────────────────────────────────────────────
+const addPinPhoto    = db.prepare(`INSERT INTO pin_photos (id, pin_id, user_id, photo, caption, created_at) VALUES (?, ?, ?, ?, ?, ?)`);
+const getPinPhotos   = db.prepare(`SELECT * FROM pin_photos WHERE pin_id = ? ORDER BY created_at ASC`);
+const deletePinPhoto = db.prepare(`DELETE FROM pin_photos WHERE id = ? AND user_id = ?`);
+
 const removeImportedRoute = db.prepare(`DELETE FROM imported_routes WHERE user_id = ? AND session_id = ?`);
 
 // ── Legacy migration ──────────────────────────────────────────────
@@ -198,6 +215,11 @@ module.exports = {
   })),
   getImportedPins:  (userId) => getImportedPins.all(userId),
   removeImportedRoute: (userId, sessionId) => removeImportedRoute.run(userId, sessionId),
+  // Pin photos
+  addPinPhoto:    (id, pinId, userId, photo, caption) => addPinPhoto.run(id, pinId, userId, photo, caption||null, new Date().toISOString()),
+  getPinPhotos:   (pinId)        => getPinPhotos.all(pinId),
+  deletePinPhoto: (id, userId)   => deletePinPhoto.run(id, userId),
+
   replaceSessionCoords: (sessionId, coords) => {
     replaceSessionCoords.run(sessionId);
     const insert = db.transaction(() => {

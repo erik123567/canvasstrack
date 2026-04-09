@@ -585,6 +585,35 @@ app.post('/api/sessions/:id/snap', requireAuth, async (req, res) => {
   }
 });
 
+
+// ── Pin Photos ────────────────────────────────────────────────────
+
+// Get photos for a pin
+app.get('/api/pins/:id/photos', requireAuth, (req, res) => {
+  try {
+    res.json(db.getPinPhotos(req.params.id));
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Add a damage photo to a pin
+app.post('/api/pins/:id/photos', requireAuth, (req, res) => {
+  try {
+    const { photo, caption } = req.body;
+    if(!photo) return res.status(400).json({ error: 'photo required' });
+    const id = Date.now() + Math.random().toString(36).slice(2);
+    db.addPinPhoto(id, req.params.id, req.userId, photo, caption);
+    res.json({ id, pin_id: req.params.id, photo, caption, created_at: new Date().toISOString() });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Delete a damage photo
+app.delete('/api/pins/:pinId/photos/:photoId', requireAuth, (req, res) => {
+  try {
+    db.deletePinPhoto(req.params.photoId, req.userId);
+    res.json({ deleted: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 

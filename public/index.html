@@ -104,10 +104,11 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 #trackBtn.stop { background: #e03b3b; color: #fff; }
 #trackBtn:disabled { opacity: .6; transform: none !important; cursor: default; }
 .icon-btn {
-  width: 60px; height: 56px; border: none; border-radius: 14px; cursor: pointer;
+  width: 60px; height: 60px; border: none; border-radius: 14px; cursor: pointer;
   font-size: 22px; background: #1c1c1c; border: 1.5px solid #2c2c2c;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  transition: transform .1s;
+  transition: transform .1s; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .icon-btn:active { transform: scale(.95); }
 #pinBtn { display: none; }
@@ -706,22 +707,29 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 #pin-confirm-bar {
   position: fixed;
   bottom: 100px; left: 16px; right: 16px;
-  z-index: 350;
+  z-index: 500;
   display: none;
   gap: 10px;
+  touch-action: manipulation;
 }
 #pin-confirm-bar.active { display: flex; }
 #pin-confirm-btn {
-  flex: 1; padding: 16px; border: none; border-radius: 14px;
+  flex: 1; padding: 18px; border: none; border-radius: 14px;
   background: #f5a623; color: #000;
-  font-size: 16px; font-weight: 900; letter-spacing: .5px;
+  font-size: 17px; font-weight: 900; letter-spacing: .5px;
   cursor: pointer; transition: transform .1s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  min-height: 60px;
 }
-#pin-confirm-btn:active { transform: scale(.97); }
+#pin-confirm-btn:active { transform: scale(.97); background: #e09510; }
 #pin-cancel-btn {
-  width: 56px; padding: 16px; border: none; border-radius: 14px;
+  width: 60px; padding: 18px; border: none; border-radius: 14px;
   background: #1c1c1c; border: 1.5px solid #2c2c2c;
   color: #888; font-size: 20px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  min-height: 60px;
 }
 #pin-cancel-btn:active { transform: scale(.97); }
 
@@ -790,6 +798,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   <div class="logo">Canvass<span>Track</span></div>
   <div id="dot"></div>
   <div id="timer"></div>
+  <button id="settingsBtn" style="background:none;border:none;color:#888;font-size:18px;cursor:pointer;padding:2px 0 2px 4px;pointer-events:all;line-height:1;display:flex;align-items:center">⚙️</button>
 </div>
 <div id="toast"></div>
 
@@ -840,7 +849,6 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 </div>
 
 <div id="bottom">
-  <button class="icon-btn" id="settingsBtn">⚙️</button>
   <button id="trackBtn">▶ Start Tracking</button>
   <button class="icon-btn" id="historyBtn">📋</button>
   <button class="icon-btn" id="stormBtn" title="Storm data">⛈️</button>

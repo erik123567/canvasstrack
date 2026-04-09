@@ -253,18 +253,32 @@ app.delete('/api/coverage/shared/:sessionId', requireAuth, (req, res) => {
 const https = require('https');
 let stormCache = { data: null, fetchedAt: 0 };
 
-function fetchJSON(url) {
+function fetchJSON(url, redirectCount = 0) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'User-Agent': 'CanvassTrack/1.0' } }, res => {
+    if (redirectCount > 5) return reject(new Error('Too many redirects'));
+    const lib = url.startsWith('https') ? require('https') : require('http');
+    const req = lib.get(url, { headers: { 'User-Agent': 'CanvassTrack/1.0' } }, res => {
+      // Follow redirects
+      if ((res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) && res.headers.location) {
+        const redirectUrl = res.headers.location.startsWith('http')
+          ? res.headers.location
+          : new URL(res.headers.location, url).toString();
+        console.log('Redirecting to:', redirectUrl);
+        res.resume(); // discard response body
+        return fetchJSON(redirectUrl, redirectCount + 1).then(resolve).catch(reject);
+      }
       let raw = '';
       res.on('data', d => raw += d);
       res.on('end', () => {
+        if (res.statusCode !== 200) {
+          return reject(new Error('HTTP ' + res.statusCode + ': ' + raw.slice(0, 200)));
+        }
         try { resolve(JSON.parse(raw)); }
-        catch(e) { reject(new Error('JSON parse error')); }
+        catch(e) { reject(new Error('JSON parse error — got: ' + raw.slice(0, 150))); }
       });
     });
     req.on('error', reject);
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.setTimeout(20000, () => { req.destroy(); reject(new Error('timeout')); });
   });
 }
 
@@ -368,7 +382,7 @@ app.get('/api/storm/debug', async (req, res) => {
       const req2 = require('https').get(url, { headers: { 'User-Agent': 'CanvassTrack/1.0' } }, r => {
         let d = '';
         r.on('data', chunk => d += chunk);
-        r.on('end', () => resolve({ status: r.statusCode, body: d.slice(0, 500), contentType: r.headers['content-type'] }));
+        r.on('end', () => resolve({ status: r.statusCode, location: r.headers.location, body: d.slice(0, 500), contentType: r.headers['content-type'] }));
       });
       req2.on('error', e => reject(e));
       req2.setTimeout(10000, () => { req2.destroy(); reject(new Error('timeout')); });

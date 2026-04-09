@@ -528,4 +528,25 @@ app.get('/api/stats', requireAuth, (req, res) => {
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-app.listen(PORT, () => console.log(`CanvassTrack running on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`CanvassTrack running on http://localhost:${PORT}`);
+  // Pre-warm storm cache so first user tap is instant
+  setTimeout(async () => {
+    try {
+      console.log('Pre-warming storm cache...');
+      const ets = new Date();
+      const sts = new Date(Date.now() - 365 * 86400000);
+      const toISOSimple = d => d.toISOString().split('.')[0] + 'Z';
+      const url = 'https://mesonet.agron.iastate.edu/geojson/lsr.geojson' +
+        '?sts=' + toISOSimple(sts) + '&ets=' + toISOSimple(ets) +
+        '&type=H&type=T&type=D&type=G&type=W';
+      const geojson = await fetchJSON(url);
+      const features = geojson.features || [];
+      const all = parseIEMFeatures(features);
+      stormCache = { data: all, fetchedAt: Date.now() };
+      console.log(`Storm cache ready: ${all.length} events`);
+    } catch(e) {
+      console.log('Storm pre-warm failed (will retry on first request):', e.message);
+    }
+  }, 5000); // wait 5s after startup
+});

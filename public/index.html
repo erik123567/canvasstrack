@@ -1516,15 +1516,15 @@ async function loadStorm(){
           </div>`);
 
       } else if(ev.type === 'wind'){
-        const color = ev.mag >= 65 ? '#0066ff' : '#4a9eff';
-        const mph = Math.round(ev.mag * 1.15078);
+        const color = ev.mag >= 75 ? '#0066ff' : '#4a9eff'; // 75mph+ = dark blue
+        const mph = Math.round(ev.mag); // IEM reports wind in mph already
         // Diamond shape using rotated square divIcon
         const iconHtml = `<div style="width:12px;height:12px;background:${color};transform:rotate(45deg);opacity:${opacity};border:1.5px solid rgba(255,255,255,.4)"></div>`;
         marker = L.marker([ev.lat, ev.lng], {
           icon: L.divIcon({ html:iconHtml, iconSize:[12,12], iconAnchor:[6,6], className:'' })
         }).bindPopup(`
           <div style="min-width:160px">
-            <div style="font-weight:800;font-size:14px;margin-bottom:3px">💨 ${ev.mag}kt Wind (${mph}mph)</div>
+            <div style="font-weight:800;font-size:14px;margin-bottom:3px">💨 ${mph}mph Wind</div>
             <div style="color:#aaa;font-size:12px">${ev.location}${ev.county?', '+ev.county:''}, ${ev.state}</div>
             <div style="color:#4a9eff;font-size:12px;margin-top:4px">${formatDate(ev.date)}</div>
           </div>`);

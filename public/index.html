@@ -1562,7 +1562,7 @@ function tickTimer(){
 
 
 // ── Settings Panel ────────────────────────────────────────────────
-document.getElementById('settingsBtn').addEventListener('click', openSettings);
+document.getElementById('settingsBtn').addEventListener('click', ()=>{ hideFloatingUI(); openSettings(); });
 document.getElementById('settings-close').addEventListener('click', () => {
   document.getElementById('settings-panel').classList.remove('open');
 });
@@ -1893,6 +1893,7 @@ async function loadStorm(){
 let statsData = null, statsPeriod = 'today';
 
 document.getElementById('open-stats-row').addEventListener('click', async () => {
+  hideFloatingUI();
   document.getElementById('settings-panel').classList.remove('open');
   document.getElementById('stats-screen').classList.add('open');
   await loadStats();
@@ -2701,6 +2702,25 @@ if(navigator.onLine) {
   setTimeout(syncOfflineQueue, 3000);
 }
 
+
+// ── Hide floating UI when panels open ────────────────────────────
+function hideFloatingUI() {
+  // Hide storm overlay bar
+  if(document.getElementById('storm-bar').classList.contains('show')) {
+    document.getElementById('storm-bar').classList.remove('show');
+    document.getElementById('storm-legend').classList.remove('show');
+    stormMarkers.forEach(m => map.removeLayer(m));
+    stormMarkers = [];
+    stormVisible = false;
+  }
+  // Hide filter bar
+  document.getElementById('map-filter').classList.remove('show');
+  // Hide coverage add button
+  document.getElementById('coverage-add-btn').classList.remove('show');
+  // Hide follow button
+  showFollowBtn(false);
+}
+
 // ── Auth ──────────────────────────────────────────────────────────
 function showAuthScreen(){ document.getElementById('auth-screen').classList.remove('hidden'); }
 function hideAuthScreen(){ document.getElementById('auth-screen').classList.add('hidden'); }
@@ -2934,6 +2954,7 @@ function openSheet(latlng, existingPin){
     });
   }
 
+  hideFloatingUI();
   document.getElementById('sheet-bg').classList.add('open');
 }
 
@@ -3035,6 +3056,7 @@ document.getElementById('delete-pin-btn').addEventListener('click',async()=>{
 
 // ── History ───────────────────────────────────────────────────────
 document.getElementById('historyBtn').addEventListener('click',()=>{
+  hideFloatingUI();
   document.getElementById('hist-panel').classList.add('open');renderHistTab(histTab);
 });
 document.getElementById('hist-close').addEventListener('click',()=>{

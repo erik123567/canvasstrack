@@ -558,6 +558,25 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   display: flex; align-items: center; gap: 6px;
 }
 
+
+/* ── Offline indicator ── */
+#offline-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9000;
+  background: #1a0a0a; border-bottom: 1px solid #e03b3b33;
+  color: #e03b3b; font-size: 12px; font-weight: 700;
+  text-align: center; padding: 6px;
+  display: none; align-items: center; justify-content: center; gap: 6px;
+  transform: translateY(-100%); transition: transform .3s;
+}
+#offline-banner.show { display: flex; transform: translateY(0); }
+#sync-badge {
+  position: fixed; top: 12px; right: 12px; z-index: 9001;
+  background: #f5a623; color: #000; border-radius: 12px;
+  padding: 3px 9px; font-size: 11px; font-weight: 800;
+  display: none;
+}
+#sync-badge.show { display: block; }
+
 /* ── Auth Screen ── */
 #auth-screen {
   position: fixed; inset: 0; z-index: 1000;
@@ -707,6 +726,8 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   </div>
 </div>
 
+<div id="offline-banner">📵 No signal — tracking locally, will sync when connected</div>
+<div id="sync-badge">⟳ Syncing…</div>
 <div id="map"></div>
 <div id="loading-overlay" style="position:fixed;inset:0;z-index:999;background:#0a0a0a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
   <div class="auth-logo">Canvass<span>Track</span></div>
@@ -1358,8 +1379,18 @@ function onPosErr(err){toast({1:'Location denied',2:'GPS unavailable',3:'GPS tim
 async function flushCoords(){
   if(!curSession||!coordBuffer.length)return;
   const batch=[...coordBuffer];coordBuffer=[];
-  try{await api.post(`/api/sessions/${curSession.id}/coords`,{coords:batch});}
-  catch(e){coordBuffer=[...batch,...coordBuffer];}
+  if(!navigator.onLine){
+    // Offline — queue locally
+    queueCoordsOffline(curSession.id, batch);
+    return;
+  }
+  try{
+    await api.post(`/api/sessions/${curSession.id}/coords`,{coords:batch});
+  } catch(e){
+    // Failed — save to offline queue for later sync
+    queueCoordsOffline(curSession.id, batch);
+    console.warn('Coords queued offline:', batch.length);
+  }
 }
 
 async function stopT(){
@@ -2159,6 +2190,125 @@ function applyFilter(){
   });
 }
 
+
+// ── Offline Queue ─────────────────────────────────────────────────
+// Coords and pins that failed to sync get stored here and retried
+const OFFLINE_COORDS_KEY = 'ct_offline_coords'; // {sessionId, coords[]}[]
+const OFFLINE_PINS_KEY   = 'ct_offline_pins';   // pin[]
+let isOnline = navigator.onLine;
+let syncInProgress = false;
+
+function getOfflineCoords() {
+  try { return JSON.parse(localStorage.getItem(OFFLINE_COORDS_KEY) || '[]'); } catch(e) { return []; }
+}
+function getOfflinePins() {
+  try { return JSON.parse(localStorage.getItem(OFFLINE_PINS_KEY) || '[]'); } catch(e) { return []; }
+}
+function saveOfflineCoords(data) { localStorage.setItem(OFFLINE_COORDS_KEY, JSON.stringify(data)); }
+function saveOfflinePins(data)   { localStorage.setItem(OFFLINE_PINS_KEY,   JSON.stringify(data)); }
+
+function queueCoordsOffline(sessionId, coords) {
+  const queue = getOfflineCoords();
+  const existing = queue.find(q => q.sessionId === sessionId);
+  if(existing) { existing.coords.push(...coords); }
+  else { queue.push({ sessionId, coords }); }
+  saveOfflineCoords(queue);
+  updateOfflineUI();
+}
+
+function queuePinOffline(pin) {
+  const queue = getOfflinePins();
+  queue.push(pin);
+  saveOfflinePins(queue);
+  updateOfflineUI();
+}
+
+function updateOfflineUI() {
+  const banner = document.getElementById('offline-banner');
+  const coords = getOfflineCoords();
+  const pins   = getOfflinePins();
+  const totalQueued = coords.reduce((n, q) => n + q.coords.length, 0) + pins.length;
+
+  if(!isOnline) {
+    banner.classList.add('show');
+    if(totalQueued > 0) banner.textContent = `📵 Offline — ${totalQueued} points queued`;
+    else banner.textContent = '📵 No signal — tracking locally';
+  } else {
+    banner.classList.remove('show');
+  }
+}
+
+async function syncOfflineQueue() {
+  if(syncInProgress) return;
+  const coords = getOfflineCoords();
+  const pins   = getOfflinePins();
+  if(!coords.length && !pins.length) return;
+
+  syncInProgress = true;
+  const badge = document.getElementById('sync-badge');
+  badge.classList.add('show');
+
+  let coordsFailed = [];
+  let pinsFailed   = [];
+
+  // Sync queued coords
+  for(const item of coords) {
+    try {
+      await api.post(`/api/sessions/${item.sessionId}/coords`, { coords: item.coords });
+    } catch(e) {
+      coordsFailed.push(item); // keep for next retry
+    }
+  }
+
+  // Sync queued pins
+  for(const pin of pins) {
+    try {
+      const saved = await api.post('/api/pins', pin);
+      pins.push(saved); // add to local state
+    } catch(e) {
+      pinsFailed.push(pin);
+    }
+  }
+
+  saveOfflineCoords(coordsFailed);
+  saveOfflinePins(pinsFailed);
+  syncInProgress = false;
+  badge.classList.remove('show');
+
+  const synced = (coords.length - coordsFailed.length) + (pins.length - pinsFailed.length);
+  if(synced > 0) {
+    toast(`✓ Synced ${synced} queued items`);
+    if(!pinsFailed.length) renderAll();
+  }
+  updateOfflineUI();
+}
+
+// Online/offline events
+window.addEventListener('online', () => {
+  isOnline = true;
+  updateOfflineUI();
+  syncOfflineQueue();
+});
+window.addEventListener('offline', () => {
+  isOnline = false;
+  updateOfflineUI();
+});
+
+// Also check on visibility change (app comes back to foreground)
+document.addEventListener('visibilitychange', () => {
+  if(!document.hidden && navigator.onLine) {
+    isOnline = true;
+    syncOfflineQueue();
+  }
+});
+
+// Initial check
+updateOfflineUI();
+if(navigator.onLine) {
+  // Sync any leftover queue from previous session
+  setTimeout(syncOfflineQueue, 3000);
+}
+
 // ── Auth ──────────────────────────────────────────────────────────
 function showAuthScreen(){ document.getElementById('auth-screen').classList.remove('hidden'); }
 function hideAuthScreen(){ document.getElementById('auth-screen').classList.add('hidden'); }
@@ -2442,11 +2592,25 @@ document.getElementById('bsave').addEventListener('click',async()=>{
       address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,
       sessionId:curSession?curSession.id:null
     };
-    try{
-      const saved=await api.post('/api/pins',pin);
-      pins.push(saved);drawPin(saved);
-      toast('Pin saved ✓');
-    }catch(e){toast('Could not save',3000);}
+    if(!navigator.onLine){
+      // Offline — save locally, draw on map, queue for sync
+      const localPin = {...pin, user_id:'local', created_at:new Date().toISOString()};
+      pins.push(localPin); drawPin(localPin);
+      queuePinOffline(pin);
+      toast('📵 Saved locally — will sync when online');
+    } else {
+      try{
+        const saved=await api.post('/api/pins',pin);
+        pins.push(saved);drawPin(saved);
+        toast('Pin saved ✓');
+      }catch(e){
+        // Failed — save locally and queue
+        const localPin = {...pin, user_id:'local', created_at:new Date().toISOString()};
+        pins.push(localPin); drawPin(localPin);
+        queuePinOffline(pin);
+        toast('📵 Saved locally — will sync when online');
+      }
+    }
   }
 
   document.getElementById('sheet-bg').classList.remove('open');

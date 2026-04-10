@@ -1532,7 +1532,7 @@ function openDetail(pinId){
   _openDetailWithPin(pin);
 }
 function _openDetailWithPin(pin){
-  detailPinId = pinId;
+  detailPinId = pin.id;
   const c = STATUS_COLORS[pin.status]||'#f5a623';
   const d = new Date(pin.created_at||Date.now());
 

@@ -216,13 +216,14 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 .saddr-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 #saddr-input {
   flex: 1; background: #0d0d0d; border: 1px solid #252525; border-radius: 11px;
-  color: #fff; font-family: inherit; font-size: 14px; padding: 10px 13px; outline: none;
+  color: #fff; font-family: inherit; font-size: 16px; padding: 12px 14px; outline: none;
+  min-height: 44px;
 }
 #saddr-input:focus { border-color: #f5a623; }
 
 .field-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #444; margin-bottom: 8px; }
 .stags { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
-.tag { padding: 8px 13px; border-radius: 20px; font-size: 13px; font-weight: 700; border: 1.5px solid #252525; cursor: pointer; transition: all .15s; }
+.tag { padding: 11px 16px; border-radius: 20px; font-size: 13px; font-weight: 700; border: 1.5px solid #252525; cursor: pointer; transition: all .15s; min-height: 44px; display: flex; align-items: center; }
 .tag[data-s="Dropped Lit"]    { color: #f5a623; }
 .tag[data-s="No Answer"]      { color: #555; }
 .tag[data-s="Spoke to Owner"] { color: #4a9eff; }
@@ -765,7 +766,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 .auth-field input {
   width: 100%; background: #0d0d0d; border: 1px solid #252525; border-radius: 10px;
   color: #fff; font-family: inherit; font-size: 16px; padding: 13px 14px; outline: none;
-  transition: border-color .2s; -webkit-appearance: none;
+  transition: border-color .2s; -webkit-appearance: none; -webkit-text-size-adjust: 100%;
 }
 .auth-field input:focus { border-color: #f5a623; }
 
@@ -952,6 +953,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 </div>
 
 <div id="bottom">
+  <button class="icon-btn" id="settingsBtn">⚙️</button>
   <button id="trackBtn">▶ Start Tracking</button>
   <button class="icon-btn" id="historyBtn">📋</button>
   <button class="icon-btn" id="stormBtn" title="Storm data">⛈️</button>
@@ -1174,18 +1176,18 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
       <button id="delete-pin-btn">🗑 Delete</button>
     </div>
 
-    <div class="field-label" style="margin-top:10px">Address</div>
-    <div class="saddr-row">
-      <input type="text" id="saddr-input" placeholder="123 Main St"/>
-    </div>
-
-    <div class="field-label">Status</div>
+    <div class="field-label" style="margin-top:10px">Status</div>
     <div class="stags">
       <div class="tag" data-s="Dropped Lit">Dropped Lit</div>
       <div class="tag" data-s="No Answer">No Answer</div>
       <div class="tag" data-s="Spoke to Owner">Spoke to Owner</div>
       <div class="tag" data-s="Interested">Interested</div>
       <div class="tag" data-s="Appointment">Appointment</div>
+    </div>
+
+    <div class="field-label">Address</div>
+    <div class="saddr-row">
+      <input type="text" id="saddr-input" placeholder="123 Main St"/>
     </div>
 
     <div class="field-label">Interaction Date</div>
@@ -1195,12 +1197,12 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 
     <div class="field-label">Owner Name</div>
     <div class="saddr-row" style="margin-bottom:14px">
-      <input type="text" id="owner-name-input" placeholder="John Smith" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:14px;padding:10px 13px;outline:none"/>
+      <input type="text" id="owner-name-input" placeholder="John Smith" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;min-height:44px"/>
     </div>
 
     <div class="field-label">Phone</div>
     <div class="saddr-row" style="margin-bottom:14px">
-      <input type="tel" id="phone-input" placeholder="(555) 123-4567" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:14px;padding:10px 13px;outline:none"/>
+      <input type="tel" id="phone-input" placeholder="(555) 123-4567" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;min-height:44px"/>
     </div>
 
     <div class="field-label">Follow-up Date</div>
@@ -1289,7 +1291,14 @@ function addSatTiles(m){
 let tT;
 function toast(msg,ms=2800){
   const el=document.getElementById('toast');
-  el.textContent=msg;el.classList.add('show');
+  el.textContent=msg;
+  // Move toast to top if pin confirm bar is active to avoid overlap
+  if(document.getElementById('pin-confirm-bar').classList.contains('active')){
+    el.style.bottom='auto'; el.style.top='80px';
+  } else {
+    el.style.top=''; el.style.bottom='160px';
+  }
+  el.classList.add('show');
   clearTimeout(tT);tT=setTimeout(()=>el.classList.remove('show'),ms);
 }
 
@@ -1298,7 +1307,7 @@ async function load(){
     // Load all data in parallel — sessions, pins, and shared routes
     const [sessData, pinData, sharedData] = await Promise.all([
       api.get('/api/sessions'),
-      api.get('/api/pins'),
+      api.get('/api/pins'), // returns without full photo data for perf
       api.get('/api/coverage/shared').catch(()=>({sessions:[],pins:[]}))
     ]);
     sessions       = sessData  || [];
@@ -1312,7 +1321,12 @@ async function load(){
 
 function sCol(i){return SESSION_COLORS[i%SESSION_COLORS.length];}
 
+let _lastRenderHash = '';
 function renderAll(){
+  // Skip if nothing changed
+  const hash = sessions.length + '|' + pins.length + '|' + (pins[0]?.id||'') + '|' + (pins[pins.length-1]?.id||'');
+  if(hash === _lastRenderHash) return;
+  _lastRenderHash = hash;
   allLines.forEach(l=>map.removeLayer(l));
   allPinMarkers.forEach(m=>map.removeLayer(m));
   allLines=[];allPinMarkers=[];
@@ -1428,6 +1442,18 @@ let detailPinId = null;
 function openDetail(pinId){
   const pin = pins.find(p=>p.id===pinId);
   if(!pin) return;
+  // If pin has photo placeholder, fetch full data first
+  if(pin._hasPhoto && (!pin.photo || pin.photo.includes('__THUMB__'))){
+    api.get('/api/pins/'+pinId).then(fullPin => {
+      const idx = pins.findIndex(p=>p.id===pinId);
+      if(idx>=0) pins[idx] = fullPin;
+      _openDetailWithPin(fullPin);
+    }).catch(() => _openDetailWithPin(pin));
+    return;
+  }
+  _openDetailWithPin(pin);
+}
+function _openDetailWithPin(pin){
   detailPinId = pinId;
   const c = STATUS_COLORS[pin.status]||'#f5a623';
   const d = new Date(pin.created_at||Date.now());
@@ -1572,7 +1598,7 @@ function onPos(pos){
   if(!curSession)return;
   const coord={lat,lng,ts:new Date().toISOString()};
   curSession.coords.push(coord);curLine.addLatLng([lat,lng]);
-  coordBuffer.push(coord);if(coordBuffer.length>=8)flushCoords();
+  coordBuffer.push(coord);if(coordBuffer.length>=15)flushCoords();
 }
 function onPosErr(err){toast({1:'Location denied',2:'GPS unavailable',3:'GPS timed out'}[err.code]||'GPS error',3000);}
 
@@ -2354,9 +2380,10 @@ document.getElementById('damage-photo-input').addEventListener('change', functio
         const canvas = document.createElement('canvas');
         const MAX = 1200; let w = img.width, h = img.height;
         if(w > MAX){ h = Math.round(h*MAX/w); w = MAX; }
+        if(h > 1200){ w = Math.round(w*1200/h); h = 1200; }
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
         sheetDamagePhotos.push(dataUrl);
         renderSheetDamageGallery();
       };
@@ -2459,7 +2486,7 @@ async function snapRouteBackground(sessionId) {
       // Reload sessions to get clean coords
       const [sessData, pinData, sharedData] = await Promise.all([
         api.get('/api/sessions'),
-        api.get('/api/pins'),
+        api.get('/api/pins'), // returns without full photo data for perf
         api.get('/api/coverage/shared').catch(()=>({sessions:[],pins:[]}))
       ]);
       sessions       = sessData  || [];
@@ -2490,7 +2517,7 @@ async function snapRoute(sessionId, cardEl) {
       // Reload sessions to get updated coords
       const [sessData, pinData, sharedData] = await Promise.all([
         api.get('/api/sessions'),
-        api.get('/api/pins'),
+        api.get('/api/pins'), // returns without full photo data for perf
         api.get('/api/coverage/shared').catch(()=>({sessions:[],pins:[]}))
       ]);
       sessions       = sessData  || [];
@@ -2953,11 +2980,12 @@ function handlePhotoFile(input){
     const img=new Image();
     img.onload=()=>{
       const canvas=document.createElement('canvas');
-      const MAX=1000;let w=img.width,h=img.height;
+      const MAX=800;let w=img.width,h=img.height;
       if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+      if(h>800){w=Math.round(w*800/h);h=800;}
       canvas.width=w;canvas.height=h;
       canvas.getContext('2d').drawImage(img,0,0,w,h);
-      pendingPhoto=canvas.toDataURL('image/jpeg',0.75);
+      pendingPhoto=canvas.toDataURL('image/jpeg',0.7);
       document.getElementById('photo-preview').src=pendingPhoto;
       document.getElementById('photo-preview-wrap').style.display='block';
       document.getElementById('photo-btn').style.display='none';
@@ -3153,6 +3181,7 @@ document.querySelectorAll('.htab').forEach(tab=>{
 
 function renderHistTab(tab){
   const body=document.getElementById('hist-body');
+  body.innerHTML='<div style="text-align:center;padding:40px;color:#2a2a2a;font-size:13px">Loading…</div>';
   const cov=document.getElementById('coverage-wrap');
   const stormsWrap = document.getElementById('storms-wrap');
 

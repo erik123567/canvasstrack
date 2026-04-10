@@ -690,6 +690,50 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   color: #fff; font-size: 20px; cursor: pointer;
 }
 
+
+/* ── Horizon shingle toggle ── */
+.horizon-toggle-wrap {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #161616; border: 1.5px solid #222; border-radius: 14px;
+  padding: 14px 16px; margin-bottom: 14px; cursor: pointer;
+  transition: border-color .2s;
+}
+.horizon-toggle-wrap.active {
+  border-color: #f5a623;
+  background: rgba(245,166,35,.06);
+}
+.horizon-toggle-left { flex: 1; }
+.horizon-toggle-title {
+  font-size: 15px; font-weight: 800; color: #fff;
+}
+.horizon-toggle-sub {
+  font-size: 11px; color: #555; margin-top: 2px;
+}
+.horizon-toggle-wrap.active .horizon-toggle-sub { color: #f5a623; }
+.horizon-switch {
+  width: 44px; height: 26px; border-radius: 13px;
+  background: #2a2a2a; position: relative; flex-shrink: 0;
+  transition: background .2s;
+}
+.horizon-switch::after {
+  content: ''; position: absolute;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #555; top: 3px; left: 3px;
+  transition: transform .2s, background .2s;
+}
+.horizon-toggle-wrap.active .horizon-switch { background: #f5a623; }
+.horizon-toggle-wrap.active .horizon-switch::after { background: #000; transform: translateX(18px); }
+
+/* Horizon badge in detail + cards */
+.horizon-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(245,166,35,.12); color: #f5a623;
+  border: 1.5px solid rgba(245,166,35,.4);
+  border-radius: 10px; padding: 4px 10px;
+  font-size: 12px; font-weight: 800;
+  margin-top: 6px;
+}
+
 /* ── Auth Screen ── */
 #auth-screen {
   position: fixed; inset: 0; z-index: 1000;
@@ -1164,6 +1208,14 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
       <input type="date" id="followup-input" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:14px;padding:10px 13px;outline:none;color-scheme:dark"/>
     </div>
 
+    <div class="horizon-toggle-wrap" id="horizon-toggle">
+      <div class="horizon-toggle-left">
+        <div class="horizon-toggle-title">🏠 Horizon Shingle</div>
+        <div class="horizon-toggle-sub">Tap to flag — rare, high-priority lead</div>
+      </div>
+      <div class="horizon-switch"></div>
+    </div>
+
     <div class="field-label">Notes</div>
     <textarea id="notes" placeholder="Roof age, damage, notes…"></textarea>
 
@@ -1395,6 +1447,16 @@ function openDetail(pinId){
   const photo = document.getElementById('detail-photo');
   if(pin.photo){ photo.src=pin.photo; photo.classList.add('show'); }
   else { photo.src=''; photo.classList.remove('show'); }
+
+  // Horizon shingle badge
+  const existingBadge = document.querySelector('.horizon-badge');
+  if(existingBadge) existingBadge.remove();
+  if(pin.horizon_shingle) {
+    const badge = document.createElement('div');
+    badge.className = 'horizon-badge';
+    badge.innerHTML = '🏠 Horizon Shingle — High Priority';
+    document.querySelector('.detail-top').insertAdjacentElement('afterend', badge);
+  }
 
   // Contact info
   const contactEl = document.getElementById('detail-contact');
@@ -2249,6 +2311,20 @@ async function renderStormsTab() {
 
 
 
+
+// ── Horizon Shingle Toggle ────────────────────────────────────────
+let horizonShingle = false;
+
+document.getElementById('horizon-toggle').addEventListener('click', () => {
+  horizonShingle = !horizonShingle;
+  document.getElementById('horizon-toggle').classList.toggle('active', horizonShingle);
+});
+
+function setHorizon(val) {
+  horizonShingle = !!val;
+  document.getElementById('horizon-toggle').classList.toggle('active', horizonShingle);
+}
+
 // ── Damage Photos ─────────────────────────────────────────────────
 let sheetDamagePhotos = []; // pending new photos in current sheet session
 let detailDamagePhotos = []; // loaded photos for current detail view
@@ -2447,7 +2523,7 @@ document.querySelectorAll('.cov-day-btn').forEach(btn => {
 
 // ── CSV Export ────────────────────────────────────────────────────
 function exportPinsCSV() {
-  const headers = ['Address','Status','Owner Name','Phone','Interaction Date','Follow-up Date','Notes','Latitude','Longitude','Date Added'];
+  const headers = ['Address','Status','Owner Name','Phone','Interaction Date','Follow-up Date','Horizon Shingle','Notes','Latitude','Longitude','Date Added'];
   const rows = pins.map(p => [
     p.address        || '',
     p.status         || '',
@@ -2455,6 +2531,7 @@ function exportPinsCSV() {
     p.phone          || '',
     p.interaction_date || '',
     p.followup_date  || '',
+    p.horizon_shingle ? 'YES' : '',
     (p.notes || '').replace(/,/g,'；').replace(/\n/g,' '),
     p.lat,
     p.lng,
@@ -2921,6 +2998,7 @@ function openSheet(latlng, existingPin){
     document.getElementById('delete-pin-btn').classList.add('show');
     document.getElementById('saddr-input').value=existingPin.address||'';
     document.getElementById('interaction-date-input').value=existingPin.interaction_date||new Date().toISOString().split('T')[0];
+    setHorizon(existingPin.horizon_shingle);
     document.getElementById('owner-name-input').value=existingPin.owner_name||'';
     document.getElementById('phone-input').value=existingPin.phone||'';
     document.getElementById('followup-input').value=existingPin.followup_date||'';
@@ -2945,6 +3023,7 @@ function openSheet(latlng, existingPin){
     document.getElementById('phone-input').value='';
     document.getElementById('followup-input').value='';
     document.getElementById('notes').value='';
+    setHorizon(false);
     selStatus='';
     document.querySelectorAll('.tag').forEach(t=>t.classList.remove('sel'));
     // Auto-fill address
@@ -2987,12 +3066,13 @@ document.getElementById('bsave').addEventListener('click',async()=>{
   const owner_name=document.getElementById('owner-name-input').value.trim()||null;
   const phone=document.getElementById('phone-input').value.trim()||null;
   const followup_date=document.getElementById('followup-input').value||null;
+  const horizon_shingle=horizonShingle?1:0;
 
   if(editingPin){
     // UPDATE existing pin
-    const updated={...editingPin,address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date};
+    const updated={...editingPin,address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,horizon_shingle};
     try{
-      await api.patch('/api/pins/'+editingPin.id,{address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date});
+      await api.patch('/api/pins/'+editingPin.id,{address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,horizon_shingle});
       await saveDamagePhotos(editingPin.id);
       // Update local array
       const idx=pins.findIndex(p=>p.id===editingPin.id);
@@ -3008,7 +3088,7 @@ document.getElementById('bsave').addEventListener('click',async()=>{
     if(!pendingLL)return;
     const pin={
       id:Date.now()+'',lat:pendingLL.lat,lng:pendingLL.lng,
-      address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,
+      address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,horizon_shingle,
       sessionId:curSession?curSession.id:null
     };
     if(!navigator.onLine){
@@ -3191,6 +3271,7 @@ function renderHistTab(tab){
             ${pin.owner_name && !isShared ? `<div style="font-size:12px;color:#888;margin-top:3px">👤 ${pin.owner_name}</div>` : ''}
             ${pin.phone && !isShared ? `<div style="font-size:12px;color:#888">📞 ${pin.phone}</div>` : ''}
             ${pin.followup_date && !isShared ? followupBadge(pin.followup_date) : ''}
+            ${pin.horizon_shingle ? `<div class="horizon-badge" style="margin-top:5px">🏠 Horizon Shingle</div>` : ''}
             ${isShared ? `<div style="font-size:11px;color:#00c9a7;font-weight:700;margin-top:4px">📤 Shared by ${pin.owner_name||'Partner'}</div>` : ''}
             <div class="pin-time" style="margin-top:6px">${pin.interaction_date ? '📅 '+formatDate(pin.interaction_date) : d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
           </div>

@@ -1312,6 +1312,7 @@ let editingPin=null; // null = new pin, object = editing existing
 let histTab='routes',coverageMapInit=false;
 let importedRoutes=[], importedPins=[];
 let followMode=true; // auto-center map on user while tracking
+let _mapFitted=false; // auto-fit map to data on first load
 
 // Map
 map=L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
@@ -1377,6 +1378,17 @@ function renderAll(){
   // Draw imported/shared pins on main map too
   importedPins.forEach(p=>drawSharedPin(p));
   if(pinClusterGroup) map.addLayer(pinClusterGroup);
+
+  // Auto-fit map to data on first load
+  if(!_mapFitted && (pins.length > 0 || sessions.length > 0)) {
+    _mapFitted = true;
+    const coords = [];
+    pins.forEach(p => coords.push([p.lat, p.lng]));
+    sessions.forEach(s => (s.coords||[]).forEach(c2 => coords.push([c2.lat, c2.lng])));
+    if(coords.length > 0) {
+      map.fitBounds(L.latLngBounds(coords), {padding:[40,40], maxZoom:15});
+    }
+  }
 }
 
 function drawPin(pin){

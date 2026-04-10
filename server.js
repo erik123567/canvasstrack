@@ -448,7 +448,9 @@ app.get('/api/stats', requireAuth, (req, res) => {
   try {
     const userId = req.userId;
     const sessions = db.getUserSessions(userId);
-    const pins     = db.getUserPins(userId);
+    const allPins  = db.getUserPins(userId);
+    // Strip photos to prevent 15MB stats query timeout
+    const pins = allPins.map(p => ({...p, photo: null}));
     const now      = new Date();
 
     // Helper: date string YYYY-MM-DD

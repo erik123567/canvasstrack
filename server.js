@@ -257,151 +257,147 @@ app.delete('/api/coverage/shared/:sessionId', requireAuth, (req, res) => {
 });
 
 
-// ── Storm Data (Iowa Env. Mesonet — mirrors NOAA/NWS) ─────────────
-// IEM provides a proper REST API for NWS storm reports: hail, wind, tornadoes
-// Single request for a date range vs 270 individual NOAA CSV fetches
+// ── Storm Data (NOAA SPC — MD/VA/PA focused, 3-year history) ─────
+// Source: https://www.spc.noaa.gov/wcm/data/{year}_{type}.csv
+// Hail, wind, tornado for MD, VA, PA, DE, WV — 13x more data than IEM for this region
 const https = require('https');
-let stormCache = { data: null, fetchedAt: 0 }; // cleared on each deploy
+const TARGET_STATES = new Set(['MD', 'VA', 'PA', 'DE', 'WV', 'DC']);
+let stormCache = { data: null, fetchedAt: 0 };
+const STORM_TTL = 24 * 60 * 60 * 1000; // 24hr — historical data doesn't change
 
+// Generic fetch helper
 function fetchJSON(url, redirectCount = 0) {
   return new Promise((resolve, reject) => {
     if (redirectCount > 5) return reject(new Error('Too many redirects'));
     const lib = url.startsWith('https') ? require('https') : require('http');
     const req = lib.get(url, { headers: { 'User-Agent': 'CanvassTrack/1.0' } }, res => {
-      // Follow redirects
       if ((res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) && res.headers.location) {
         const redirectUrl = res.headers.location.startsWith('http')
           ? res.headers.location
           : new URL(res.headers.location, url).toString();
-        console.log('Redirecting to:', redirectUrl);
-        res.resume(); // discard response body
+        res.resume();
         return fetchJSON(redirectUrl, redirectCount + 1).then(resolve).catch(reject);
       }
       let raw = '';
       res.on('data', d => raw += d);
       res.on('end', () => {
-        if (res.statusCode !== 200) {
-          return reject(new Error('HTTP ' + res.statusCode + ': ' + raw.slice(0, 200)));
-        }
+        if (res.statusCode !== 200) return reject(new Error('HTTP ' + res.statusCode));
         try { resolve(JSON.parse(raw)); }
-        catch(e) { reject(new Error('JSON parse error — got: ' + raw.slice(0, 150))); }
+        catch(e) { reject(new Error('JSON parse error: ' + raw.slice(0, 100))); }
       });
     });
     req.on('error', reject);
-    req.setTimeout(20000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error('timeout')); });
   });
 }
 
-function iemTypeToCanvass(p) {
-  // IEM single-char type codes
-  // IEM ignores type= URL filter so we get all types and filter here
-  const code = p.type || '';
-  if (code === 'H') return 'hail';
-  if (code === 'T') return 'tornado';
-  // Wind: G=wind gust, D=wind damage, W=high wind, N=non-tstm wind dmg
-  if (code === 'G' || code === 'D' || code === 'W' || code === 'N') return 'wind';
-  // Fallback: parse typetext string
-  const txt = (p.typetext || '').toUpperCase();
-  if (txt === 'HAIL') return 'hail';
-  if (txt === 'TORNADO') return 'tornado';
-  if (txt.includes('WND') || txt.includes('WIND')) return 'wind';
-  return null; // floods, snow, etc. filtered out
+// Fetch plain text (for CSV)
+function fetchText(url) {
+  return new Promise((resolve, reject) => {
+    const lib = url.startsWith('https') ? require('https') : require('http');
+    const req = lib.get(url, { headers: { 'User-Agent': 'CanvassTrack/1.0' } }, res => {
+      let raw = '';
+      res.on('data', d => raw += d);
+      res.on('end', () => resolve(raw));
+    });
+    req.on('error', reject);
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error('timeout')); });
+  });
 }
 
-function parseIEMFeatures(features) {
-  return features.map(f => {
-    try {
-      const p = f.properties || {};
-      const type = iemTypeToCanvass(p);
-      if (!type) return null;
-      const coords = f.geometry && f.geometry.coordinates;
-      if (!coords || coords.length < 2) return null;
-      const lng = parseFloat(coords[0]);
-      const lat = parseFloat(coords[1]);
-      if (isNaN(lat) || isNaN(lng)) return null;
-      // magnitude: inches for hail, mph for wind, EF# for tornado
-      const mag = parseFloat(p.magnitude) || 0;
-      if (type === 'hail' && mag < 0.75) return null; // ≥0.75" (penny) = insurance threshold
-      if (type === 'wind' && mag < 45)  return null;   // ≥45mph — lower to catch more damage events
-      // IEM date field is 'valid' (UTC ISO string)
-      const dateStr = (p.valid || '').split('T')[0] || new Date().toISOString().split('T')[0];
-      return {
-        type, date: dateStr, mag,
-        location: p.city  || '',
-        county:   p.county || '',
-        state:    p.st    || p.state || '',
-        lat, lng
-      };
-    } catch(err) { return null; }
-  }).filter(Boolean);
-}
-
-app.get('/api/storm/events', async (req, res) => {
+async function fetchSPCcsv(year, type) {
+  const url = `https://www.spc.noaa.gov/wcm/data/${year}_${type}.csv`;
   try {
-    const days = Math.min(parseInt(req.query.days) || 30, 365);
-    const now  = Date.now();
+    const text = await fetchText(url);
+    const lines = text.trim().split('\n');
+    const hdr   = lines[0].split(',');
+    const stIdx   = hdr.indexOf('st');
+    const slatIdx = hdr.indexOf('slat');
+    const slonIdx = hdr.indexOf('slon');
+    const magIdx  = hdr.indexOf('mag');
+    const dateIdx = hdr.indexOf('date');
 
-    // Cache for 1 hour
-    if (stormCache.data && now - stormCache.fetchedAt < 3600000) {
-      const cutoff = new Date(now - days * 86400000).toISOString().split('T')[0];
-      return res.json(stormCache.data.filter(e => e.date >= cutoff));
+    const results = [];
+    for (let i = 1; i < lines.length; i++) {
+      const p = lines[i].split(',');
+      const state = (p[stIdx] || '').trim();
+      if (!TARGET_STATES.has(state)) continue;
+
+      const lat = parseFloat(p[slatIdx]);
+      const lng = parseFloat(p[slonIdx]);
+      const mag = parseFloat(p[magIdx]) || 0;
+      const date = (p[dateIdx] || '').split(' ')[0];
+      if (!lat || !lng || !date || isNaN(lat) || isNaN(lng)) continue;
+
+      // Magnitude thresholds — err on lower side to catch more events
+      if (type === 'hail' && mag < 0.75) continue;
+      if (type === 'wind' && mag < 40)   continue;
+
+      results.push({
+        type: type === 'torn' ? 'tornado' : type,
+        mag: Math.round(mag * 100) / 100,
+        lat, lng, date, state,
+        location: '',
+        county: '',
+      });
     }
-
-    // Build ISO date strings for IEM API (no milliseconds)
-    const ets = new Date();
-    const sts = new Date(now - 365 * 86400000);
-    const toISOSimple = d => d.toISOString().split('.')[0] + 'Z';
-
-    // IEM LSR API — correct endpoint is lsr.geojson (no 's')
-    // Filter to storm-damage types only: H=hail, T=tornado, D=wind damage, G=wind gust
-    // Nationwide, 90 days
-    const url = 'https://mesonet.agron.iastate.edu/geojson/lsr.geojson' +
-      '?sts=' + toISOSimple(sts) +
-      '&ets=' + toISOSimple(ets) +
-      '&type=H&type=T&type=D&type=G&type=W';  // W=high wind
-
-    console.log('Fetching IEM storm data...');
-    const geojson = await fetchJSON(url);
-
-    if (!geojson || typeof geojson !== 'object') {
-      throw new Error('IEM returned non-JSON response');
-    }
-    const features = geojson.features || [];
-    console.log('IEM returned ' + features.length + ' raw features');
-
-    const all = parseIEMFeatures(features);
-    console.log('Parsed ' + all.length + ' qualifying storm events');
-
-    stormCache = { data: all, fetchedAt: now };
-    const cutoff = new Date(now - days * 86400000).toISOString().split('T')[0];
-    res.json(all.filter(e => e.date >= cutoff));
-
+    console.log(`SPC ${year} ${type}: ${results.length} events in target states`);
+    return results;
   } catch(e) {
-    console.error('Storm fetch error:', e.message);
-    res.status(500).json({ error: 'Could not fetch storm data: ' + e.message });
+    console.warn(`SPC fetch failed ${year}/${type}:`, e.message);
+    return [];
+  }
+}
+
+async function loadSPCData() {
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear, currentYear - 1, currentYear - 2];
+  const types = ['hail', 'wind', 'torn'];
+  const allResults = [];
+  for (const year of years) {
+    for (const type of types) {
+      const events = await fetchSPCcsv(year, type);
+      allResults.push(...events);
+    }
+  }
+  // Deduplicate
+  const seen = new Set();
+  const deduped = allResults.filter(e => {
+    const key = `${e.type}|${e.lat.toFixed(2)}|${e.lng.toFixed(2)}|${e.date}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  console.log(`SPC total: ${deduped.length} unique events in MD/VA/PA/DE/WV`);
+  return deduped;
+}
+
+app.get('/api/storm/events', requireAuth, async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 30, 365); // 1 year max — claim filing limit
+    if (!stormCache.data || (Date.now() - stormCache.fetchedAt) > STORM_TTL) {
+      console.log('Loading SPC storm data...');
+      stormCache.data = await loadSPCData();
+      stormCache.fetchedAt = Date.now();
+    }
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
+    res.json(stormCache.data.filter(e => e.date >= cutoff));
+  } catch(e) {
+    console.error('Storm events error:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
-
-// Debug endpoint — check what IEM actually returns
-app.get('/api/storm/debug', async (req, res) => {
-  try {
-    const ets = new Date();
-    const sts = new Date(Date.now() - 7 * 86400000);
-    const toISO = d => d.toISOString().split('.')[0] + 'Z';
-    const url = 'https://mesonet.agron.iastate.edu/geojson/lsr.geojson?sts=' + toISO(sts) + '&ets=' + toISO(ets) + '&type=H&type=T&type=D&type=G&type=W';  // W=high wind
-    const raw = await new Promise((resolve, reject) => {
-      const req2 = require('https').get(url, { headers: { 'User-Agent': 'CanvassTrack/1.0' } }, r => {
-        let d = '';
-        r.on('data', chunk => d += chunk);
-        r.on('end', () => resolve({ status: r.statusCode, location: r.headers.location, body: d.slice(0, 500), contentType: r.headers['content-type'] }));
-      });
-      req2.on('error', e => reject(e));
-      req2.setTimeout(10000, () => { req2.destroy(); reject(new Error('timeout')); });
-    });
-    res.json(raw);
-  } catch(e) { res.json({ error: e.message }); }
+// Debug endpoint
+app.get('/api/storm/debug', requireAuth, async (req, res) => {
+  res.json({
+    cached: !!stormCache.data,
+    cachedAt: stormCache.fetchedAt ? new Date(stormCache.fetchedAt).toISOString() : null,
+    totalEvents: stormCache.data?.length || 0,
+    targetStates: [...TARGET_STATES],
+  });
 });
+
 
 
 // Stats endpoint — shows raw IEM data breakdown for debugging
@@ -643,8 +639,9 @@ app.listen(PORT, () => {
         '&type=H&type=T&type=D&type=G&type=W';
       const geojson = await fetchJSON(url);
       const features = geojson.features || [];
-      const all = parseIEMFeatures(features);
-      stormCache = { data: all, fetchedAt: Date.now() };
+      // SPC pre-warm handled by loadSPCData
+      stormCache.data = await loadSPCData();
+      stormCache.fetchedAt = Date.now();
       console.log(`Storm cache ready: ${all.length} events`);
     } catch(e) {
       console.log('Storm pre-warm failed (will retry on first request):', e.message);

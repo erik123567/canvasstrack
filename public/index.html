@@ -1312,8 +1312,8 @@ let editingPin=null; // null = new pin, object = editing existing
 let histTab='routes',coverageMapInit=false;
 let importedRoutes=[], importedPins=[];
 let followMode=true; // auto-center map on user while tracking
-let pinClusterGroup = null;
-let _mapFitted=false; // auto-fit map to data on first load
+let _mapFitted=false;
+let pinClusterGroup=null; // auto-fit map to data on first load
 
 // Map
 map=L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
@@ -1394,8 +1394,9 @@ function renderAll(){
 
 function drawPin(pin){
   const c=STATUS_COLORS[pin.status]||'#f5a623';
+  const hasRealPhoto = pin.photo && pin.photo.length > 1000 && !pin.photo.includes('__THUMB__');
   let iconHtml, iconSize, iconAnchor;
-  if(pin.photo){
+  if(hasRealPhoto){
     // Show circular thumbnail above a pin stem
     iconHtml=`
       <div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">

@@ -165,8 +165,28 @@ app.patch('/api/sessions/:id/end', requireAuth, (req, res) => {
 
 // ── Pins (protected) ──────────────────────────────────────────────
 app.get('/api/pins', requireAuth, (req, res) => {
-  try { res.json(db.getUserPins(req.userId)); }
+  try {
+    const full = req.query.full === '1';
+    const pins = db.getUserPins(req.userId);
+    if(full) return res.json(pins);
+    // Strip cover photo from list — send thumbnail instead (saves ~95% bandwidth)
+    res.json(pins.map(p => ({
+      ...p,
+      photo: p.photo ? p.photo.slice(0, 200) + '__THUMB__' + p.photo.slice(-10) : null,
+      _hasPhoto: !!p.photo
+    })));
+  }
   catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Get single pin with full photo data
+app.get('/api/pins/:id', requireAuth, (req, res) => {
+  try {
+    const pins = db.getUserPins(req.userId);
+    const pin = pins.find(p => p.id === req.params.id);
+    if(!pin) return res.status(404).json({ error: 'Pin not found' });
+    res.json(pin);
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/pins', requireAuth, (req, res) => {

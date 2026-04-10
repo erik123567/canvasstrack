@@ -22,7 +22,10 @@
 <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js">
 // ── PWA Service Worker + Install Prompt ──────────────────────────
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
@@ -640,6 +643,17 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 #sync-badge.show { display: block; }
 
 
+
+/* ── Swipe to call ── */
+.pin-card-wrap { position: relative; overflow: hidden; border-radius: 14px; margin-bottom: 10px; }
+.pin-card-wrap .pin-card { margin-bottom: 0; border-radius: 14px; transition: transform .2s; }
+.pin-call-reveal {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 72px;
+  background: #00c9a7; display: flex; align-items: center; justify-content: center;
+  font-size: 22px; cursor: pointer;
+}
+.pin-card-wrap.swiped .pin-card { transform: translateX(-72px); border-radius: 14px 0 0 14px; }
+
 /* ── Damage photo gallery ── */
 .damage-gallery {
   display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;
@@ -734,6 +748,17 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   font-size: 12px; font-weight: 800;
   margin-top: 6px;
 }
+
+
+/* ── Quick pin toast ── */
+#quickpin-toast {
+  position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+  z-index: 350; background: rgba(20,20,20,.95);
+  border: 1px solid rgba(255,255,255,.1); border-radius: 16px;
+  padding: 10px 18px; display: none; align-items: center; gap: 10px;
+  font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap;
+}
+#quickpin-toast.show { display: flex; }
 
 /* ── Auth Screen ── */
 #auth-screen {
@@ -906,6 +931,8 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 </div>
 <div id="toast"></div>
 
+<div id="quickpin-toast">📍 <span id="quickpin-label">No Answer saved</span></div>
+
 <button id="follow-btn" title="Re-center on my location">◎</button>
 
 <!-- Storm controls -->
@@ -1076,10 +1103,13 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
   </div>
   <div id="hist-tabs">
     <div class="htab active" data-tab="routes">Routes</div>
-    <div class="htab" data-tab="pins">Touch Points</div>
+    <div class="htab" data-tab="pins">Pins</div>
     <div class="htab" data-tab="coverage">Coverage</div>
-    <div class="htab" data-tab="storms">⛈️ Storms</div>
+    <div class="htab" data-tab="storms">⛈️</div>
   </div>
+<div style="padding:10px 16px 0;flex-shrink:0">
+  <input id="pin-search" type="text" placeholder="🔍  Search address, name, notes…" style="width:100%;background:#1a1a1a;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:11px 14px;outline:none"/>
+</div>
   <div id="hist-body"></div>
   <div id="coverage-wrap">
     <div id="coverage-map"></div>
@@ -1190,36 +1220,43 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
       <input type="text" id="saddr-input" placeholder="123 Main St"/>
     </div>
 
-    <div class="field-label">Interaction Date</div>
-    <div class="saddr-row" style="margin-bottom:14px">
-      <input type="date" id="interaction-date-input" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:14px;padding:10px 13px;outline:none;color-scheme:dark"/>
-    </div>
-
-    <div class="field-label">Owner Name</div>
-    <div class="saddr-row" style="margin-bottom:14px">
-      <input type="text" id="owner-name-input" placeholder="John Smith" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;min-height:44px"/>
-    </div>
-
-    <div class="field-label">Phone</div>
-    <div class="saddr-row" style="margin-bottom:14px">
-      <input type="tel" id="phone-input" placeholder="(555) 123-4567" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;min-height:44px"/>
-    </div>
-
-    <div class="field-label">Follow-up Date</div>
-    <div class="saddr-row" style="margin-bottom:14px">
-      <input type="date" id="followup-input" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:14px;padding:10px 13px;outline:none;color-scheme:dark"/>
-    </div>
-
-    <div class="horizon-toggle-wrap" id="horizon-toggle">
-      <div class="horizon-toggle-left">
-        <div class="horizon-toggle-title">🏠 Horizon Shingle</div>
-        <div class="horizon-toggle-sub">Tap to flag — rare, high-priority lead</div>
-      </div>
-      <div class="horizon-switch"></div>
-    </div>
-
     <div class="field-label">Notes</div>
-    <textarea id="notes" placeholder="Roof age, damage, notes…"></textarea>
+    <textarea id="notes" placeholder="Roof age, damage, owner info…"></textarea>
+
+    <!-- Collapsible details section -->
+    <button id="sheet-more-btn" style="width:100%;padding:11px;background:#1a1a1a;border:1px solid #252525;border-radius:11px;color:#555;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:6px">
+      <span id="sheet-more-icon">▼</span> More Details
+    </button>
+
+    <div id="sheet-details" style="display:none">
+      <div class="field-label">Owner Name</div>
+      <div class="saddr-row" style="margin-bottom:14px">
+        <input type="text" id="owner-name-input" placeholder="John Smith" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;min-height:44px"/>
+      </div>
+
+      <div class="field-label">Phone</div>
+      <div class="saddr-row" style="margin-bottom:14px">
+        <input type="tel" id="phone-input" placeholder="(555) 123-4567" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;min-height:44px"/>
+      </div>
+
+      <div class="field-label">Interaction Date</div>
+      <div class="saddr-row" style="margin-bottom:14px">
+        <input type="date" id="interaction-date-input" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;color-scheme:dark;min-height:44px"/>
+      </div>
+
+      <div class="field-label">Follow-up Date</div>
+      <div class="saddr-row" style="margin-bottom:14px">
+        <input type="date" id="followup-input" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;color-scheme:dark;min-height:44px"/>
+      </div>
+
+      <div class="horizon-toggle-wrap" id="horizon-toggle">
+        <div class="horizon-toggle-left">
+          <div class="horizon-toggle-title">🏠 Horizon Shingle</div>
+          <div class="horizon-toggle-sub">Tap to flag — rare, high-priority lead</div>
+        </div>
+        <div class="horizon-switch"></div>
+      </div>
+    </div>
 
     <div class="photo-section">
       <div class="field-label">Cover Photo <span style="color:#444;font-weight:400;text-transform:none;letter-spacing:0">— shows on map marker</span></div>
@@ -1324,7 +1361,7 @@ function sCol(i){return SESSION_COLORS[i%SESSION_COLORS.length];}
 let _lastRenderHash = '';
 function renderAll(){
   // Skip if nothing changed
-  const hash = sessions.length + '|' + pins.length + '|' + (pins[0]?.id||'') + '|' + (pins[pins.length-1]?.id||'');
+  const hash = sessions.length + '|' + pins.length + '|' + importedRoutes.length + '|' + (pins[0]?.id||'') + '|' + (pins[pins.length-1]?.id||'');
   if(hash === _lastRenderHash) return;
   _lastRenderHash = hash;
   allLines.forEach(l=>map.removeLayer(l));
@@ -1339,6 +1376,7 @@ function renderAll(){
   pins.forEach(p=>drawPin(p));
   // Draw imported/shared pins on main map too
   importedPins.forEach(p=>drawSharedPin(p));
+  if(pinClusterGroup) map.addLayer(pinClusterGroup);
 }
 
 function drawPin(pin){
@@ -1364,9 +1402,8 @@ function drawPin(pin){
     iconSize=[14,14];iconAnchor=[7,14];
   }
   const icon=L.divIcon({html:iconHtml,iconSize,iconAnchor,className:''});
-  const m=L.marker([pin.lat,pin.lng],{icon})
-    .on('click',()=>openDetail(pin.id))
-    .addTo(map);
+  const m=L.marker([pin.lat,pin.lng],{icon}).on('click',()=>openDetail(pin.id));
+  if(pinClusterGroup) pinClusterGroup.addLayer(m); else m.addTo(map);
   allPinMarkers.push(m);
   return m;
 }
@@ -2338,6 +2375,30 @@ async function renderStormsTab() {
 
 
 
+
+// ── Sheet More Details toggle ────────────────────────────────────
+document.getElementById('sheet-more-btn').addEventListener('click', () => {
+  const details = document.getElementById('sheet-details');
+  const icon = document.getElementById('sheet-more-icon');
+  const open = details.style.display === 'block';
+  details.style.display = open ? 'none' : 'block';
+  icon.textContent = open ? '▼' : '▲';
+  document.getElementById('sheet-more-btn').style.color = open ? '#555' : '#f5a623';
+});
+
+// Auto-expand details when editing a pin that has details filled
+function autoExpandDetails(pin) {
+  if(pin && (pin.owner_name || pin.phone || pin.followup_date || pin.horizon_shingle)) {
+    document.getElementById('sheet-details').style.display = 'block';
+    document.getElementById('sheet-more-icon').textContent = '▲';
+    document.getElementById('sheet-more-btn').style.color = '#f5a623';
+  } else {
+    document.getElementById('sheet-details').style.display = 'none';
+    document.getElementById('sheet-more-icon').textContent = '▼';
+    document.getElementById('sheet-more-btn').style.color = '#555';
+  }
+}
+
 // ── Horizon Shingle Toggle ────────────────────────────────────────
 let horizonShingle = false;
 
@@ -2925,6 +2986,47 @@ async function initAuth(){
   showAuthScreen();
 }
 
+
+// ── Quick Pin (long press on map = instant No Answer) ─────────────
+let longPressTimer = null;
+
+function startLongPress(latlng) {
+  longPressTimer = setTimeout(async () => {
+    if(!tracking) return;
+    if(navigator.vibrate) navigator.vibrate(50);
+    const addr = await reverseGeocode(latlng.lat, latlng.lng);
+    const pin = {
+      id: Date.now()+'', lat:latlng.lat, lng:latlng.lng,
+      address: addr==='Unknown location'?'':addr,
+      status:'No Answer', notes:'', photo:null,
+      owner_name:null, phone:null, followup_date:null,
+      horizon_shingle:0, interaction_date:new Date().toISOString().split('T')[0],
+      sessionId: curSession?curSession.id:null
+    };
+    try {
+      const saved = await api.post('/api/pins', pin);
+      pins.push(saved); drawPin(saved);
+      document.getElementById('quickpin-label').textContent = 'No Answer — ' + (addr.split(',')[0]||'logged');
+    } catch(e) {
+      const lp = {...pin,user_id:'local',created_at:new Date().toISOString()};
+      pins.push(lp); drawPin(lp); queuePinOffline(pin);
+      document.getElementById('quickpin-label').textContent = 'Saved offline';
+    }
+    const qt = document.getElementById('quickpin-toast');
+    qt.classList.add('show');
+    setTimeout(()=>qt.classList.remove('show'), 2500);
+  }, 600);
+}
+function cancelLongPress(){ clearTimeout(longPressTimer); longPressTimer=null; }
+
+map.on('mousedown',  e=>{ if(tracking&&!dropMode) startLongPress(e.latlng); });
+map.on('mouseup',    ()=>cancelLongPress());
+map.on('mousemove',  ()=>cancelLongPress());
+map.on('dragstart',  ()=>cancelLongPress());
+map.on('touchstart', e=>{ if(tracking&&!dropMode&&e.originalEvent.touches.length===1) startLongPress(e.latlng); });
+map.on('touchend',   ()=>cancelLongPress());
+map.on('touchmove',  ()=>cancelLongPress());
+
 // ── Pin Drop Mode ────────────────────────────────────────────────
 let dropMode = false;
 
@@ -3023,6 +3125,7 @@ function openSheet(latlng, existingPin){
     // Edit mode — pre-fill everything
     document.getElementById('sheet-title').textContent='✏️ Edit Stop';
     loadDamagePhotosForPin(existingPin.id);
+    autoExpandDetails(existingPin);
     document.getElementById('delete-pin-btn').classList.add('show');
     document.getElementById('saddr-input').value=existingPin.address||'';
     document.getElementById('interaction-date-input').value=existingPin.interaction_date||new Date().toISOString().split('T')[0];
@@ -3044,6 +3147,7 @@ function openSheet(latlng, existingPin){
   } else {
     // New pin mode
     document.getElementById('sheet-title').textContent='📍 Log this stop';
+    autoExpandDetails(null);
     document.getElementById('delete-pin-btn').classList.remove('show');
     document.getElementById('saddr-input').value='';
     document.getElementById('interaction-date-input').value=new Date().toISOString().split('T')[0];
@@ -3163,6 +3267,12 @@ document.getElementById('delete-pin-btn').addEventListener('click',async()=>{
 });
 
 // ── History ───────────────────────────────────────────────────────
+
+// Live search in touch points tab
+document.getElementById('pin-search').addEventListener('input', () => {
+  if(histTab === 'pins') renderHistTab('pins');
+});
+
 document.getElementById('historyBtn').addEventListener('click',()=>{
   hideFloatingUI();
   document.getElementById('hist-panel').classList.add('open');renderHistTab(histTab);
@@ -3200,9 +3310,10 @@ function renderHistTab(tab){
     body.style.display='none';cov.classList.add('active');document.getElementById('coverage-add-btn').classList.add('show');setTimeout(()=>{ initCoverageMap(); },50);return;
   }
   body.style.display='block';cov.classList.remove('active');document.getElementById('coverage-add-btn').classList.remove('show');
+  const ps=document.getElementById('pin-search');if(ps)ps.style.display=tab==='pins'?'block':'none';
 
   if(tab==='routes'){
-    if(!sessions.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">🗺️</div><div class="empty-text">No routes yet.<br>Start tracking to record your first run.</div></div>`;return;}
+    if(!sessions.length){body.innerHTML='<div class="empty-state"><div class="empty-icon">🗺️</div><div class="empty-text">No routes yet.<br><br>Tap <strong style="color:#f5a623">▶ Start Tracking</strong> to record your first route.</div></div>';return;}
     body.innerHTML='';
     [...sessions].reverse().forEach((s,ri)=>{
       const idx=sessions.length-1-ri;
@@ -3210,7 +3321,7 @@ function renderHistTab(tab){
       const coords=s.coords||[];
       const pc=pins.filter(p=>p.session_id===s.id||p.sessionId===s.id).length;
       const card=document.createElement('div');card.className='route-card';
-      card.innerHTML=`<div class="route-swatch" style="background:${s.color||sCol(idx)}"></div><div class="route-info"><div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div><div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} pts · ${pc} pin${pc!==1?'s':''}</div></div><div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0"><button class="shr-btn" style="background:transparent;border:1px solid #f5a623;color:#f5a623;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:800;cursor:pointer">Share</button><button class="snap-btn" data-id="${s.id}" style="background:transparent;border:1px solid #00c9a7;color:#00c9a7;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:800;cursor:pointer">↺ Re-snap</button></div>`;
+      card.innerHTML=`<div class="route-swatch" style="background:${s.color||sCol(idx)}"></div><div class="route-info"><div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div><div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} pts · ${pc} pin${pc!==1?'s':''}</div></div><div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0"><button class="shr-btn" style="background:transparent;border:1px solid #f5a623;color:#f5a623;border-radius:8px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer;min-height:44px">Share</button><button class="snap-btn" data-id="${s.id}" style="background:transparent;border:1px solid #00c9a7;color:#00c9a7;border-radius:8px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer;min-height:44px">↺ Re-snap</button></div>`;
       card.querySelector('.shr-btn').addEventListener('click',e=>{ e.stopPropagation(); shareSession(s.id); });
       card.querySelector('.snap-btn').addEventListener('click',e=>{ e.stopPropagation(); snapRoute(s.id, card); });
       card.addEventListener('click',()=>{
@@ -3263,8 +3374,26 @@ function renderHistTab(tab){
     exportBtn.addEventListener('click', exportPinsCSV);
     body.appendChild(exportBtn);
 
-    const allPins = [...pins, ...importedPins.map(p=>({...p, _shared:true}))];
-    if(!allPins.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">📍</div><div class="empty-text">No touch points yet.<br>Tap 📍 or tap the map while tracking to log a stop.</div></div>`;return;}
+    // Search filter
+    const searchEl = document.getElementById('pin-search');
+    const searchQ = (searchEl?.value||'').toLowerCase().trim();
+    let allPins = [...pins, ...importedPins.map(p=>({...p, _shared:true}))];
+    if(searchQ) {
+      allPins = allPins.filter(p =>
+        (p.address||'').toLowerCase().includes(searchQ) ||
+        (p.owner_name||'').toLowerCase().includes(searchQ) ||
+        (p.notes||'').toLowerCase().includes(searchQ) ||
+        (p.status||'').toLowerCase().includes(searchQ)
+      );
+    }
+    if(!allPins.length){
+      const q = document.getElementById('pin-search')?.value;
+      const msg = q
+        ? 'No pins match "' + q + '"'
+        : 'No touch points yet.<br><br>While tracking, tap <strong style="color:#f5a623">📍</strong> to log a stop, or <strong style="color:#f5a623">long-press</strong> the map for a quick No Answer.';
+      body.innerHTML = '<div class="empty-state"><div class="empty-icon">' + (q?'🔍':'📍') + '</div><div class="empty-text">' + msg + '</div></div>';
+      return;
+    }
     body.innerHTML='';
     // Due today / overdue section
     if(dueToday.length){
@@ -3303,6 +3432,7 @@ function renderHistTab(tab){
             ${pin.horizon_shingle ? `<div class="horizon-badge" style="margin-top:5px">🏠 Horizon Shingle</div>` : ''}
             ${isShared ? `<div style="font-size:11px;color:#00c9a7;font-weight:700;margin-top:4px">📤 Shared by ${pin.owner_name||'Partner'}</div>` : ''}
             <div class="pin-time" style="margin-top:6px">${pin.interaction_date ? '📅 '+formatDate(pin.interaction_date) : d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+            ${(()=>{const s=sessions.find(s=>s.id===(pin.session_id||pin.sessionId));return s?`<div style="font-size:10px;color:#2a2a2a;margin-top:2px">Route: ${formatDate(s.started_at)}</div>`:''})()}
           </div>
         </div>
       `;
@@ -3324,7 +3454,23 @@ function renderHistTab(tab){
         e.stopPropagation();
         openMapsNav(parseFloat(navBtn.dataset.lat), parseFloat(navBtn.dataset.lng), navBtn.dataset.addr);
       });
-      body.appendChild(card);
+
+      if(pin.phone && !isShared){
+        const wrap = document.createElement('div'); wrap.className='pin-card-wrap';
+        const reveal = document.createElement('div'); reveal.className='pin-call-reveal'; reveal.textContent='📞';
+        reveal.addEventListener('click',()=>{ window.location.href='tel:'+pin.phone; wrap.classList.remove('swiped'); });
+        let tx=0;
+        wrap.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
+        wrap.addEventListener('touchend',e=>{
+          const dx=e.changedTouches[0].clientX-tx;
+          if(dx>50) wrap.classList.add('swiped');
+          else if(dx<-20) wrap.classList.remove('swiped');
+        },{passive:true});
+        wrap.appendChild(card); wrap.appendChild(reveal);
+        body.appendChild(wrap);
+      } else {
+        body.appendChild(card);
+      }
     });
   }
 }

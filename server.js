@@ -1,680 +1,3895 @@
-const express = require('express');
-const cors    = require('cors');
-const bcrypt  = require('bcrypt');
-const jwt     = require('jsonwebtoken');
-const path    = require('path');
-const db      = require('./database');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>CanvassTrack</title>
+<meta name="description" content="Roofing Sales Canvassing">
+<meta name="theme-color" content="#f5a623">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CanvassTrack">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
-const app    = express();
-const PORT   = process.env.PORT || 3000;
-const SECRET = process.env.JWT_SECRET || 'canvasstrack-dev-secret-change-in-prod';
-
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
-
-// ── Auth middleware ────────────────────────────────────────────────
-function requireAuth(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
-  try {
-    const token = header.slice(7);
-    const payload = jwt.verify(token, SECRET);
-    req.userId = payload.userId;
-    next();
-  } catch(e) {
-    res.status(401).json({ error: 'Invalid or expired token' });
-  }
+<!-- PWA -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#f5a623">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CanvassTrack">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js">
+// ── PWA Service Worker + Install Prompt ──────────────────────────
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => console.log('SW registered'))
+      .catch(err => console.log('SW failed:', err));
+  });
 }
 
-// ── Auth routes ────────────────────────────────────────────────────
+// Android install prompt
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  // Show install banner after 30 seconds if not already installed
+  setTimeout(showInstallBanner, 30000);
+});
 
-// Register
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-    if (!name || !email || !password)
-      return res.status(400).json({ error: 'Name, email and password required' });
-    if (password.length < 6)
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+function showInstallBanner(){
+  if(!deferredInstallPrompt) return;
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;bottom:96px;left:12px;right:12px;z-index:9999;background:#161616;border:1px solid #f5a623;border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:12px';
+  banner.innerHTML = `
+    <img src="/icon-192.png" style="width:40px;height:40px;border-radius:10px;flex-shrink:0"/>
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:800">Install CanvassTrack</div>
+      <div style="font-size:12px;color:#555;margin-top:2px">Add to home screen for the best experience</div>
+    </div>
+    <button id="pwa-install-btn" style="padding:8px 14px;background:#f5a623;color:#000;border:none;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer;flex-shrink:0">Install</button>
+    <button id="pwa-dismiss-btn" style="background:none;border:none;color:#444;font-size:18px;cursor:pointer;padding:4px">✕</button>
+  `;
+  document.body.appendChild(banner);
+  banner.querySelector('#pwa-install-btn').addEventListener('click', async () => {
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    if(outcome === 'accepted') toast('CanvassTrack installed!');
+    deferredInstallPrompt = null;
+    banner.remove();
+  });
+  banner.querySelector('#pwa-dismiss-btn').addEventListener('click', () => banner.remove());
+}
 
-    const existing = db.getUserByEmail(email.toLowerCase().trim());
-    if (existing) return res.status(409).json({ error: 'Email already in use' });
+</script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; }
+#map { position: fixed; top: 0; left: 0; right: 0; bottom: 88px; z-index: 1; }
 
-    const hashed = await bcrypt.hash(password, 10);
-    const id = Date.now() + Math.random().toString(36).slice(2);
-    db.createUser(id, name.trim(), email.toLowerCase().trim(), hashed);
+#toppill {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 100; background: rgba(0,0,0,.82); backdrop-filter: blur(12px);
+  border-radius: 30px; padding: 10px 18px;
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid rgba(255,255,255,.13); white-space: nowrap; pointer-events: none;
+}
+.logo { font-size: 14px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #f5a623; }
+.logo span { color: #fff; }
+#dot { width: 8px; height: 8px; border-radius: 50%; background: #3a3a3a; transition: all .3s; }
+#dot.on { background: #f5a623; box-shadow: 0 0 7px #f5a623; animation: blink 1.3s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+@keyframes spin { to { transform: rotate(360deg); } }
+#timer { font-size: 13px; font-weight: 700; color: #f5a623; visibility: hidden; min-width: 36px; }
+#timer.show { visibility: visible; }
 
-    const token = jwt.sign({ userId: id }, SECRET, { expiresIn: '90d' });
-    res.json({ token, user: { id, name: name.trim(), email: email.toLowerCase().trim() } });
-  } catch(e) {
-    res.status(500).json({ error: e.message });
+#toast {
+  position: fixed; bottom: 160px; left: 50%; transform: translateX(-50%);
+  z-index: 200; background: rgba(20,20,20,.92); color: #fff;
+  border-radius: 22px; padding: 10px 20px; font-size: 14px; font-weight: 600;
+  max-width: 88vw; text-align: center; white-space: normal;
+  opacity: 0; pointer-events: none; transition: opacity .25s;
+  border: 1px solid rgba(255,255,255,.1);
+}
+#toast.show { opacity: 1; }
+
+#bottom {
+  position: fixed; bottom: 0; left: 0; right: 0; height: 88px; z-index: 300;
+  background: #0a0a0a; border-top: 1px solid #1c1c1c;
+  display: flex; align-items: center; gap: 10px; padding: 0 16px 8px;
+}
+#trackBtn {
+  flex: 1; height: 56px; border: none; border-radius: 14px; cursor: pointer;
+  font-size: 16px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
+  background: #f5a623; color: #000; transition: transform .1s, background .2s;
+}
+#trackBtn:active { transform: scale(.97); }
+#trackBtn.stop { background: #e03b3b; color: #fff; }
+#trackBtn:disabled { opacity: .6; transform: none !important; cursor: default; }
+.icon-btn {
+  width: 60px; height: 60px; border: none; border-radius: 14px; cursor: pointer;
+  font-size: 22px; background: #1c1c1c; border: 1.5px solid #2c2c2c;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: transform .1s; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.icon-btn:active { transform: scale(.95); }
+#pinBtn { display: none; }
+#pinBtn.show { display: flex; }
+
+/* ── Tracking mode: hide non-essential bottom buttons ── */
+body.tracking #settingsBtn,
+body.tracking #stormBtn,
+body.tracking #filterBtn { display: none !important; }
+body.drop-mode #bottom { display: none !important; }
+body.tracking #pinBtn.show { display: flex !important; }
+
+/* ── History Panel ── */
+#hist-panel {
+  position: fixed; inset: 0; z-index: 400;
+  background: #0d0d0d; display: none; flex-direction: column;
+}
+#hist-panel.open { display: flex; }
+#hist-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 56px 20px 16px; border-bottom: 1px solid #1c1c1c; flex-shrink: 0;
+}
+.hist-title { font-size: 22px; font-weight: 900; }
+#hist-close {
+  width: 36px; height: 36px; border-radius: 50%; background: #1c1c1c;
+  border: none; color: #888; font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+#hist-tabs { display: flex; border-bottom: 1px solid #1c1c1c; flex-shrink: 0; }
+.htab {
+  flex: 1; padding: 14px 8px; text-align: center;
+  font-size: 13px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  color: #444; cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s;
+}
+.htab.active { color: #f5a623; border-bottom-color: #f5a623; }
+#hist-body { flex: 1; overflow-y: auto; padding: 16px; }
+
+.route-card {
+  background: #161616; border: 1px solid #222; border-radius: 14px;
+  padding: 14px 16px; margin-bottom: 10px; cursor: pointer;
+  display: flex; align-items: center; gap: 14px; transition: border-color .15s;
+}
+.route-card:active { border-color: #f5a623; }
+.route-swatch { width: 10px; height: 44px; border-radius: 5px; flex-shrink: 0; }
+.route-info { flex: 1; }
+.route-date { font-size: 14px; font-weight: 700; }
+.route-meta { font-size: 12px; color: #444; margin-top: 3px; }
+
+.pin-card {
+  background: #161616; border: 1px solid #222; border-radius: 14px;
+  padding: 13px 15px; margin-bottom: 10px;
+}
+.pin-top { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 6px; }
+.pin-addr { font-size: 14px; font-weight: 700; flex: 1; }
+.pin-badge {
+  font-size: 11px; font-weight: 800; padding: 4px 10px;
+  border-radius: 12px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .5px;
+}
+.pin-edit-btn {
+  width: 32px; height: 32px; border-radius: 8px; background: #222; border: 1px solid #2a2a2a;
+  color: #666; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all .15s;
+}
+.pin-edit-btn:active { background: #2a2a2a; color: #f5a623; }
+.pin-notes { font-size: 13px; color: #555; margin-bottom: 8px; }
+.pin-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; flex-shrink: 0; }
+.pin-time { font-size: 11px; color: #333; }
+
+#coverage-wrap { display: none; }
+#coverage-wrap.active { display: block; position: relative; }
+#coverage-map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+#coverage-hint-text { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); z-index:1000; background:rgba(0,0,0,.8); color:#fff; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; border:1px solid rgba(255,255,255,.1); pointer-events:none; white-space:nowrap; }
+
+
+.empty-state { text-align: center; padding: 60px 20px; color: #333; }
+.empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-text { font-size: 15px; line-height: 1.6; }
+
+/* ── Pin Sheet (new + edit) ── */
+#sheet-bg {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(5px);
+  display: none; align-items: flex-end;
+}
+#sheet-bg.open { display: flex; }
+#sheet {
+  width: 100%; background: #161616; border-radius: 22px 22px 0 0;
+  border-top: 1px solid rgba(255,255,255,.08);
+  padding: 10px 18px 48px; animation: slideup .22s ease;
+  max-height: 92vh; overflow-y: auto;
+}
+@keyframes slideup { from{transform:translateY(28px);opacity:0} to{transform:none;opacity:1} }
+.handle { width: 36px; height: 4px; background: #2a2a2a; border-radius: 2px; margin: 0 auto 16px; }
+
+.sheet-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; }
+.stitle { font-size: 17px; font-weight: 800; }
+#delete-pin-btn {
+  padding: 6px 12px; background: transparent; border: 1px solid #3a1a1a;
+  color: #e03b3b; border-radius: 8px; font-size: 13px; font-weight: 700;
+  cursor: pointer; display: none;
+}
+#delete-pin-btn.show { display: block; }
+#delete-pin-btn:active { background: #1a0a0a; }
+
+.saddr-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+#saddr-input {
+  flex: 1; background: #0d0d0d; border: 1px solid #252525; border-radius: 11px;
+  color: #fff; font-family: inherit; font-size: 16px; padding: 12px 14px; outline: none;
+  min-height: 44px;
+}
+#saddr-input:focus { border-color: #f5a623; }
+
+.field-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #444; margin-bottom: 8px; }
+.stags { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+.tag { padding: 11px 16px; border-radius: 20px; font-size: 13px; font-weight: 700; border: 1.5px solid #252525; cursor: pointer; transition: all .15s; min-height: 44px; display: flex; align-items: center; }
+.tag[data-s="Dropped Lit"]    { color: #f5a623; }
+.tag[data-s="No Answer"]      { color: #555; }
+.tag[data-s="Spoke to Owner"] { color: #4a9eff; }
+.tag[data-s="Interested"]     { color: #00c9a7; }
+.tag[data-s="Appointment"]    { color: #a855f7; }
+.tag.sel { background: rgba(255,255,255,.06); border-color: currentColor; }
+#notes {
+  width: 100%; background: #0d0d0d; border: 1px solid #252525; border-radius: 11px;
+  color: #fff; font-family: inherit; font-size: 15px; padding: 11px 13px;
+  resize: none; height: 76px; outline: none; margin-bottom: 13px;
+}
+#notes::placeholder { color: #333; }
+#notes:focus { border-color: #f5a623; }
+
+.photo-section { margin-bottom: 14px; }
+#photo-input { display: none; }
+#photo-preview-wrap { display: none; position: relative; margin-bottom: 8px; }
+#photo-preview { width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; display: block; }
+#photo-remove {
+  position: absolute; top: 8px; right: 8px; width: 28px; height: 28px;
+  border-radius: 50%; background: rgba(0,0,0,.7); border: none; color: #fff;
+  font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+#photo-btn {
+  width: 100%; padding: 13px; background: #1a1a1a; border: 1.5px dashed #2a2a2a;
+  border-radius: 12px; color: #555; font-size: 14px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+#photo-btn:active { background: #222; }
+
+.sbtns { display: flex; gap: 10px; }
+.bsave { flex:1; padding:15px; background:#f5a623; color:#000; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+.bcancel { padding:15px 18px; background:#1c1c1c; color:#555; border:none; border-radius:12px; font-size:15px; cursor:pointer; }
+
+/* Follow button */
+#follow-btn {
+  position: fixed; bottom: 160px; right: 16px; z-index: 300;
+  width: 48px; height: 48px; border-radius: 50%;
+  background: #0a0a0a; border: 2px solid #f5a623;
+  color: #f5a623; font-size: 20px; cursor: pointer;
+  display: none; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,.6);
+  transition: transform .1s;
+}
+#follow-btn.show { display: flex; }
+#follow-btn:active { transform: scale(.93); }
+
+
+/* ── Pin Detail Sheet ── */
+#detail-bg {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(5px);
+  display: none; align-items: flex-end;
+}
+#detail-bg.open { display: flex; }
+#detail-sheet {
+  width: 100%; background: #161616; border-radius: 22px 22px 0 0;
+  border-top: 1px solid rgba(255,255,255,.08);
+  max-height: 88vh; overflow-y: auto;
+  animation: slideup .22s ease;
+}
+#detail-photo {
+  width: 100%; max-height: 240px; object-fit: cover;
+  border-radius: 22px 22px 0 0; display: none;
+}
+#detail-photo.show { display: block; }
+.detail-body { padding: 18px 18px 48px; }
+.detail-handle { width: 36px; height: 4px; background: #2a2a2a; border-radius: 2px; margin: 0 auto 16px; }
+.detail-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.detail-addr { font-size: 19px; font-weight: 800; flex: 1; line-height: 1.25; }
+.detail-badge {
+  font-size: 11px; font-weight: 800; padding: 5px 11px;
+  border-radius: 12px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .5px;
+  margin-top: 2px;
+}
+.detail-notes { font-size: 15px; color: #888; margin: 12px 0 16px; line-height: 1.5; }
+.detail-meta { font-size: 12px; color: #3a3a3a; margin-bottom: 24px; }
+.detail-btns { display: flex; gap: 10px; }
+.detail-edit { flex: 1; padding: 15px; background: #f5a623; color: #000; border: none; border-radius: 12px; font-size: 16px; font-weight: 800; cursor: pointer; }
+.detail-delete { padding: 15px 18px; background: transparent; border: 1px solid #3a1a1a; color: #e03b3b; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
+
+
+
+
+
+/* ── Shared Route Code Display ── */
+.share-code-display {
+  background: #0d0d0d; border: 1.5px solid #252525; border-radius: 12px;
+  padding: 16px; text-align: center; margin: 12px 0 8px;
+}
+.share-code-text {
+  font-size: 30px; font-weight: 900; letter-spacing: 6px; color: #f5a623;
+  font-family: 'SF Mono', 'Courier New', monospace;
+}
+.share-code-hint { font-size: 11px; color: #444; margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* Coverage add button */
+#coverage-add-btn {
+  position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); z-index: 9999;
+  padding: 10px 22px; background: rgba(0,0,0,.88); border-radius: 24px;
+  border: 1px solid #f5a623; color: #f5a623;
+  font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  display: none;
+}
+#coverage-add-btn.show { display: block; }
+#coverage-add-btn:active { background: rgba(20,20,20,.95); }
+
+/* Imported routes list */
+.imported-card {
+  background: #161616; border: 1px solid #222; border-radius: 12px;
+  padding: 13px 15px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px;
+}
+.imported-swatch { width: 8px; height: 36px; border-radius: 4px; flex-shrink: 0; }
+.imported-info { flex: 1; }
+.imported-owner { font-size: 13px; font-weight: 700; color: #fff; }
+.imported-meta { font-size: 11px; color: #444; margin-top: 2px; }
+.imported-remove { background: none; border: none; color: #333; font-size: 18px; cursor: pointer; padding: 4px; }
+.imported-remove:active { color: #e03b3b; }
+
+/* ── Settings Panel ── */
+#settings-panel {
+  position: fixed; inset: 0; z-index: 400;
+  background: #0d0d0d; display: none; flex-direction: column;
+  overflow-y: auto;
+}
+#settings-panel.open { display: flex; }
+
+#settings-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 56px 20px 20px; flex-shrink: 0;
+}
+.settings-title { font-size: 22px; font-weight: 900; }
+#settings-close {
+  width: 36px; height: 36px; border-radius: 50%; background: #1c1c1c;
+  border: none; color: #888; font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.settings-body { padding: 0 16px 48px; flex: 1; }
+
+.settings-section {
+  margin-bottom: 28px;
+}
+.settings-section-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: #444; margin-bottom: 10px; padding-left: 4px;
+}
+.settings-card {
+  background: #161616; border: 1px solid #222; border-radius: 16px;
+  overflow: hidden;
+}
+.settings-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px; border-bottom: 1px solid #1c1c1c;
+  gap: 12px;
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row-label { font-size: 14px; font-weight: 600; color: #fff; }
+.settings-row-value { font-size: 14px; color: #555; text-align: right; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-row-action {
+  font-size: 14px; font-weight: 700; color: #f5a623; cursor: pointer;
+  background: none; border: none; padding: 0; flex-shrink: 0;
+}
+.settings-row-action:active { opacity: .7; }
+
+/* Change password form — hidden by default */
+#pw-form {
+  padding: 0 18px 18px; display: none; flex-direction: column; gap: 10px;
+  border-top: 1px solid #1c1c1c;
+}
+#pw-form.open { display: flex; }
+.pw-input {
+  width: 100%; background: #0d0d0d; border: 1px solid #252525; border-radius: 10px;
+  color: #fff; font-family: inherit; font-size: 15px; padding: 12px 14px; outline: none;
+}
+.pw-input:focus { border-color: #f5a623; }
+.pw-error { font-size: 12px; color: #e03b3b; display: none; }
+.pw-error.show { display: block; }
+.pw-success { font-size: 12px; color: #00c9a7; display: none; }
+.pw-success.show { display: block; }
+.pw-save-btn {
+  padding: 13px; background: #f5a623; color: #000; border: none;
+  border-radius: 10px; font-size: 15px; font-weight: 800; cursor: pointer;
+}
+.pw-save-btn:active { transform: scale(.98); }
+
+/* Logout button */
+.logout-btn {
+  width: 100%; padding: 18px; background: transparent;
+  border: 1.5px solid #3a1a1a; border-radius: 14px;
+  color: #e03b3b; font-size: 16px; font-weight: 800;
+  cursor: pointer; transition: background .15s; margin-top: 8px;
+}
+.logout-btn:active { background: rgba(224,59,59,.1); }
+
+.settings-version {
+  text-align: center; font-size: 12px; color: #2a2a2a;
+  padding: 24px 0 8px;
+}
+
+
+/* ── Custom Confirm Sheet ── */
+#confirm-bg {
+  position: fixed; inset: 0; z-index: 3000;
+  background: rgba(0,0,0,.6); backdrop-filter: blur(4px);
+  display: none; align-items: flex-end;
+}
+#confirm-bg.open { display: flex; }
+#confirm-sheet {
+  width: 100%; background: #161616; border-radius: 22px 22px 0 0;
+  border-top: 1px solid rgba(255,255,255,.08);
+  padding: 20px 20px 48px; animation: slideup .2s ease;
+}
+#confirm-msg { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 20px; text-align: center; line-height: 1.4; }
+#confirm-ok  { width:100%; padding:16px; background:#e03b3b; color:#fff; border:none; border-radius:13px; font-size:16px; font-weight:800; cursor:pointer; margin-bottom:10px; }
+#confirm-cancel { width:100%; padding:15px; background:#1c1c1c; color:#666; border:none; border-radius:13px; font-size:15px; cursor:pointer; }
+
+
+
+/* ── Storm overlay ── */
+#storm-bar {
+  position: fixed; bottom: 160px; left: 50%; transform: translateX(-50%);
+  z-index: 201; display: none; align-items: center; gap: 8px;
+  background: rgba(0,0,0,.88); backdrop-filter: blur(10px);
+  padding: 9px 14px; border-radius: 30px;
+  border: 1px solid rgba(255,255,255,.12);
+  white-space: nowrap;
+}
+#storm-bar.show { display: flex; }
+.storm-type-btn {
+  padding: 4px 9px; border-radius: 14px; font-size: 14px;
+  border: 1.5px solid transparent; cursor: pointer; background: transparent;
+  transition: all .15s; opacity: .35;
+}
+.storm-type-btn.active { opacity: 1; background: rgba(255,255,255,.06); }
+.storm-days-btn {
+  padding: 5px 11px; border-radius: 16px; font-size: 12px; font-weight: 800;
+  border: 1.5px solid transparent; cursor: pointer; background: transparent;
+  color: #555; transition: all .15s;
+}
+.storm-days-btn.active { border-color: #e03b3b; color: #e03b3b; background: rgba(224,59,59,.1); }
+#storm-loading { font-size: 12px; color: #f5a623; display: none; }
+
+/* ── Coverage date filter ── */
+#cov-filter {
+  position: absolute; top: 12px; left: 12px; z-index: 1000;
+  display: flex; gap: 5px; flex-wrap: wrap;
+}
+.cov-day-btn {
+  padding: 5px 10px; border-radius: 14px; font-size: 11px; font-weight: 800;
+  border: 1.5px solid rgba(255,255,255,.2); cursor: pointer;
+  background: rgba(0,0,0,.8); color: #555; transition: all .15s;
+  backdrop-filter: blur(8px);
+}
+.cov-day-btn.active { border-color: #f5a623; color: #f5a623; background: rgba(0,0,0,.9); }
+
+/* Storm legend */
+#storm-legend {
+  position: absolute; bottom: 12px; left: 12px; z-index: 1000;
+  background: rgba(0,0,0,.82); border-radius: 10px; padding: 8px 12px;
+  font-size: 11px; display: none; flex-direction: column; gap: 4px;
+  border: 1px solid rgba(255,255,255,.1);
+}
+#storm-legend.show { display: flex; }
+.legend-row { display: flex; align-items: center; gap: 7px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+
+
+/* ── Stats Screen ── */
+#stats-screen {
+  position: fixed; inset: 0; z-index: 450;
+  background: #0d0d0d; display: none; flex-direction: column;
+  overflow-y: auto;
+}
+#stats-screen.open { display: flex; }
+#stats-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 52px 20px 16px; flex-shrink: 0;
+}
+.stats-title { font-size: 22px; font-weight: 900; }
+#stats-close {
+  width: 36px; height: 36px; border-radius: 50%; background: #1c1c1c;
+  border: none; color: #888; font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.stats-body { padding: 0 16px 60px; }
+
+/* Period tabs */
+.stats-tabs { display: flex; gap: 6px; margin-bottom: 20px; }
+
+/* ── Stats chart buttons ── */
+.stats-chart-btn {
+  padding: 6px 14px; border-radius: 14px; font-size: 12px; font-weight: 800;
+  border: 1.5px solid #222; color: #444; background: transparent; cursor: pointer;
+}
+.stats-chart-btn.active { border-color: #f5a623; color: #f5a623; background: rgba(245,166,35,.08); }
+
+/* ── Stats screen ── */
+.stats-tab {
+  padding: 7px 14px; border-radius: 16px; font-size: 12px; font-weight: 800;
+  border: 1.5px solid #222; color: #444; background: transparent; cursor: pointer;
+}
+.stats-tab.active { border-color: #f5a623; color: #f5a623; background: rgba(245,166,35,.08); }
+
+/* Summary cards */
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+.stat-card {
+  background: #161616; border: 1px solid #222; border-radius: 14px; padding: 14px;
+}
+.stat-card-val { font-size: 28px; font-weight: 900; color: #fff; line-height: 1; }
+.stat-card-lbl { font-size: 11px; color: #444; margin-top: 4px; text-transform: uppercase; letter-spacing: .8px; }
+.stat-card-sub { font-size: 12px; color: #f5a623; margin-top: 4px; font-weight: 700; }
+
+/* Status breakdown */
+.stats-section-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+  color: #444; margin-bottom: 10px;
+}
+.status-bar-row { margin-bottom: 8px; }
+.status-bar-label { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 12px; }
+.status-bar-track { height: 6px; background: #1a1a1a; border-radius: 3px; overflow: hidden; }
+.status-bar-fill { height: 100%; border-radius: 3px; transition: width .4s ease; }
+
+/* Mini bar chart */
+.chart-wrap { margin-bottom: 24px; }
+.chart-bars { display: flex; align-items: flex-end; gap: 2px; height: 60px; }
+.chart-bar { flex: 1; border-radius: 2px 2px 0 0; min-width: 2px; cursor: pointer; transition: opacity .15s; }
+.chart-bar:hover { opacity: .7; }
+.chart-labels { display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: #333; }
+
+/* Follow-up summary */
+.followup-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 0; border-bottom: 1px solid #1a1a1a;
+}
+.followup-row:last-child { border-bottom: none; }
+
+/* ── Storms tab ── */
+.storm-tab-days {
+  padding: 4px 9px; border-radius: 12px; font-size: 11px; font-weight: 800;
+  border: 1px solid #2a2a2a; color: #444; background: transparent; cursor: pointer;
+}
+.storm-tab-days.active { border-color: #e03b3b; color: #e03b3b; background: rgba(224,59,59,.1); }
+.storm-tab-type { transition: opacity .15s; }
+.storm-tab-type:not(.active) { opacity: .35; }
+
+.storm-event-card {
+  background: #161616; border: 1px solid #222; border-radius: 12px;
+  padding: 11px 13px; margin-bottom: 8px; cursor: pointer;
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.storm-event-card:active { border-color: rgba(255,255,255,.2); }
+.storm-event-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+.storm-event-info { flex: 1; min-width: 0; }
+.storm-event-size { font-size: 14px; font-weight: 800; }
+.storm-event-loc { font-size: 12px; color: #555; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.storm-event-date { font-size: 11px; color: #333; margin-top: 3px; }
+.storm-event-dist { font-size: 11px; font-weight: 700; flex-shrink: 0; }
+
+/* ── Map status filter ── */
+#map-filter {
+  position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+  z-index: 200; display: none; gap: 6px; flex-wrap: wrap; justify-content: center;
+  max-width: 340px;
+  background: rgba(0,0,0,.82); backdrop-filter: blur(10px);
+  padding: 8px 10px; border-radius: 30px;
+  border: 1px solid rgba(255,255,255,.1);
+}
+#map-filter.show { display: flex; }
+.filt-btn {
+  padding: 6px 12px; border-radius: 20px; border: 1.5px solid transparent;
+  font-size: 11px; font-weight: 800; cursor: pointer;
+  background: transparent; letter-spacing: .5px; text-transform: uppercase;
+  transition: all .15s; white-space: nowrap;
+}
+.filt-btn.active { opacity: 1; }
+.filt-btn:not(.active) { opacity: .4; }
+
+/* ── Follow-up badge ── */
+.followup-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; padding: 3px 8px;
+  border-radius: 10px; margin-top: 4px;
+}
+.followup-badge.due { background: rgba(224,59,59,.15); color: #e03b3b; border: 1px solid rgba(224,59,59,.3); }
+.followup-badge.upcoming { background: rgba(245,166,35,.1); color: #f5a623; border: 1px solid rgba(245,166,35,.2); }
+.followup-badge.done { background: rgba(85,96,111,.1); color: #55606f; border: 1px solid rgba(85,96,111,.2); }
+
+/* ── Call button in detail ── */
+.call-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; background: rgba(0,201,167,.1);
+  border: 1px solid rgba(0,201,167,.3); border-radius: 12px;
+  color: #00c9a7; font-size: 15px; font-weight: 700;
+  cursor: pointer; margin-bottom: 12px; text-decoration: none;
+}
+.call-btn:active { background: rgba(0,201,167,.2); }
+
+/* ── Due today section in history ── */
+.due-today-header {
+  font-size: 12px; font-weight: 800; letter-spacing: 1px;
+  text-transform: uppercase; color: #e03b3b; margin: 0 0 10px;
+  display: flex; align-items: center; gap: 6px;
+}
+
+
+/* ── Offline indicator ── */
+#offline-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9000;
+  background: #1a0a0a; border-bottom: 1px solid #e03b3b33;
+  color: #e03b3b; font-size: 12px; font-weight: 700;
+  text-align: center; padding: 6px;
+  display: none; align-items: center; justify-content: center; gap: 6px;
+  transform: translateY(-100%); transition: transform .3s;
+}
+#offline-banner.show { display: flex; transform: translateY(0); }
+#sync-badge {
+  position: fixed; top: 12px; right: 12px; z-index: 9001;
+  background: #f5a623; color: #000; border-radius: 12px;
+  padding: 3px 9px; font-size: 11px; font-weight: 800;
+  display: none;
+}
+#sync-badge.show { display: block; }
+
+
+
+/* ── Swipe to call ── */
+.pin-card-wrap { position: relative; overflow: hidden; border-radius: 14px; margin-bottom: 10px; }
+.pin-card-wrap .pin-card { margin-bottom: 0; border-radius: 14px; transition: transform .2s; }
+.pin-call-reveal {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 72px;
+  background: #00c9a7; display: flex; align-items: center; justify-content: center;
+  font-size: 22px; cursor: pointer;
+}
+.pin-card-wrap.swiped .pin-card { transform: translateX(-72px); border-radius: 14px 0 0 14px; }
+
+/* ── Damage photo gallery ── */
+.damage-gallery {
+  display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.damage-gallery::-webkit-scrollbar { display: none; }
+.damage-thumb-wrap {
+  position: relative; flex-shrink: 0;
+  width: 80px; height: 80px;
+}
+.damage-thumb {
+  width: 80px; height: 80px; object-fit: cover;
+  border-radius: 10px; cursor: pointer;
+  border: 1.5px solid #2a2a2a;
+}
+.damage-thumb:active { opacity: .8; }
+.damage-thumb-del {
+  position: absolute; top: -6px; right: -6px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #e03b3b; border: 2px solid #0d0d0d;
+  color: #fff; font-size: 11px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; line-height: 1;
+}
+.damage-add-btn {
+  width: 80px; height: 80px; border-radius: 10px; flex-shrink: 0;
+  background: #1a1a1a; border: 1.5px dashed #2a2a2a;
+  color: #444; font-size: 24px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.damage-add-btn:active { background: #222; }
+
+/* Full-screen photo viewer */
+#photo-viewer {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(0,0,0,.95); display: none;
+  align-items: center; justify-content: center;
+  flex-direction: column;
+}
+#photo-viewer.open { display: flex; }
+#photo-viewer img {
+  max-width: 100%; max-height: 85vh; object-fit: contain;
+  border-radius: 8px;
+}
+#photo-viewer-close {
+  position: absolute; top: 16px; right: 16px;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: rgba(255,255,255,.15); border: none;
+  color: #fff; font-size: 20px; cursor: pointer;
+}
+
+
+/* ── Horizon shingle toggle ── */
+.horizon-toggle-wrap {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #161616; border: 1.5px solid #222; border-radius: 14px;
+  padding: 14px 16px; margin-bottom: 14px; cursor: pointer;
+  transition: border-color .2s;
+}
+.horizon-toggle-wrap.active {
+  border-color: #f5a623;
+  background: rgba(245,166,35,.06);
+}
+.horizon-toggle-left { flex: 1; }
+.horizon-toggle-title {
+  font-size: 15px; font-weight: 800; color: #fff;
+}
+.horizon-toggle-sub {
+  font-size: 11px; color: #555; margin-top: 2px;
+}
+.horizon-toggle-wrap.active .horizon-toggle-sub { color: #f5a623; }
+.horizon-switch {
+  width: 44px; height: 26px; border-radius: 13px;
+  background: #2a2a2a; position: relative; flex-shrink: 0;
+  transition: background .2s;
+}
+.horizon-switch::after {
+  content: ''; position: absolute;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #555; top: 3px; left: 3px;
+  transition: transform .2s, background .2s;
+}
+.horizon-toggle-wrap.active .horizon-switch { background: #f5a623; }
+.horizon-toggle-wrap.active .horizon-switch::after { background: #000; transform: translateX(18px); }
+
+/* Horizon badge in detail + cards */
+.horizon-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(245,166,35,.12); color: #f5a623;
+  border: 1.5px solid rgba(245,166,35,.4);
+  border-radius: 10px; padding: 4px 10px;
+  font-size: 12px; font-weight: 800;
+  margin-top: 6px;
+}
+
+
+/* ── Quick pin toast ── */
+#quickpin-toast {
+  position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+  z-index: 350; background: rgba(20,20,20,.95);
+  border: 1px solid rgba(255,255,255,.1); border-radius: 16px;
+  padding: 10px 18px; display: none; align-items: center; gap: 10px;
+  font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap;
+}
+#quickpin-toast.show { display: flex; }
+
+/* ── Auth Screen ── */
+#auth-screen {
+  position: fixed; inset: 0; z-index: 1000;
+  background: #0a0a0a;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 32px 24px;
+}
+#auth-screen.hidden { display: none; }
+
+.auth-logo { font-size: 26px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #f5a623; margin-bottom: 4px; }
+.auth-logo span { color: #fff; }
+.auth-sub { font-size: 13px; color: #444; margin-bottom: 40px; letter-spacing: .5px; }
+
+.auth-card {
+  width: 100%; max-width: 360px;
+  background: #161616; border-radius: 20px;
+  border: 1px solid #222; padding: 24px;
+}
+.auth-tabs { display: flex; margin-bottom: 24px; background: #0d0d0d; border-radius: 10px; padding: 3px; }
+.auth-tab {
+  flex: 1; padding: 10px; text-align: center; font-size: 14px; font-weight: 700;
+  color: #444; cursor: pointer; border-radius: 8px; transition: all .2s;
+}
+.auth-tab.active { background: #f5a623; color: #000; }
+
+.auth-field { margin-bottom: 14px; }
+.auth-field label { display: block; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #444; margin-bottom: 6px; }
+.auth-field input {
+  width: 100%; background: #0d0d0d; border: 1px solid #252525; border-radius: 10px;
+  color: #fff; font-family: inherit; font-size: 16px; padding: 13px 14px; outline: none;
+  transition: border-color .2s; -webkit-appearance: none; -webkit-text-size-adjust: 100%;
+}
+.auth-field input:focus { border-color: #f5a623; }
+
+.auth-btn {
+  width: 100%; padding: 15px; background: #f5a623; color: #000;
+  border: none; border-radius: 12px; font-size: 16px; font-weight: 900;
+  letter-spacing: .5px; cursor: pointer; margin-top: 6px;
+  transition: transform .1s;
+}
+.auth-btn:active { transform: scale(.98); }
+.auth-error { font-size: 13px; color: #e03b3b; text-align: center; margin-top: 12px; min-height: 18px; }
+
+/* User badge in top pill */
+#user-name-badge {
+  font-size: 11px; color: #888; cursor: pointer; padding: 2px 0;
+  pointer-events: all;
+}
+#user-name-badge:hover { color: #f5a623; }
+
+/* ── Pin Drop Mode ── */
+#pin-crosshair {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) translateY(-20px);
+  z-index: 250;
+  pointer-events: none;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+}
+#pin-crosshair.active { display: flex; }
+#pin-crosshair svg {
+  width: 52px; height: 52px;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,.8));
+}
+#pin-crosshair-stem {
+  width: 3px; height: 16px;
+  background: linear-gradient(#f5a623, transparent);
+  border-radius: 2px;
+}
+
+#pin-confirm-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 9000;
+  display: none;
+  gap: 0;
+  touch-action: manipulation;
+}
+#pin-confirm-bar.active { display: flex; }
+#pin-confirm-btn {
+  flex: 1; padding: 0; border: none; border-radius: 0;
+  background: #f5a623; color: #000;
+  font-size: 22px; font-weight: 900;
+  cursor: pointer; transition: background .1s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  height: 80px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+#pin-confirm-btn:active { background: #d4901f; }
+#pin-cancel-btn {
+  width: 88px; padding: 0; border: none; border-radius: 0;
+  background: #1a1a1a; border-right: 2px solid #333;
+  color: #888; font-size: 26px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  height: 80px;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 60px;
+}
+#pin-cancel-btn:active { transform: scale(.97); }
+
+.you-ring { width:16px; height:16px; border-radius:50%; background:#0066ff; border:3px solid #fff; box-shadow:0 0 0 5px rgba(0,102,255,.3),0 2px 8px rgba(0,0,0,.5); }
+.pin-drop { width:14px; height:14px; border-radius:50% 50% 50% 0; border:2.5px solid #fff; transform:rotate(-45deg); box-shadow:0 3px 10px rgba(0,0,0,.7); }
+.leaflet-popup-content-wrapper { background:#161616; color:#fff; border-radius:12px; border:1px solid #252525; box-shadow:0 6px 24px rgba(0,0,0,.7); }
+.leaflet-popup-tip { background:#161616; }
+.leaflet-popup-content { margin:12px 14px; font-family:-apple-system,sans-serif; }
+</style>
+</head>
+<body>
+
+
+<!-- Auth Screen -->
+<div id="auth-screen">
+  <div class="auth-logo">Canvass<span>Track</span></div>
+  <div class="auth-sub">Roofing Sales Canvassing</div>
+  <div class="auth-card">
+    <div class="auth-tabs">
+      <div class="auth-tab active" data-auth="login">Log In</div>
+      <div class="auth-tab" data-auth="register">Sign Up</div>
+    </div>
+
+    <!-- Login form -->
+    <div id="login-form">
+      <div class="auth-field"><label>Email</label><input type="email" id="login-email" placeholder="you@email.com" autocomplete="email"/></div>
+      <div class="auth-field"><label>Password</label><input type="password" id="login-password" placeholder="Password" autocomplete="current-password"/></div>
+      <button class="auth-btn" id="login-btn">Log In</button>
+    </div>
+
+    <!-- Register form -->
+    <div id="register-form" style="display:none">
+      <div class="auth-field"><label>Name</label><input type="text" id="reg-name" placeholder="Your name" autocomplete="name"/></div>
+      <div class="auth-field"><label>Email</label><input type="email" id="reg-email" placeholder="you@email.com" autocomplete="email"/></div>
+      <div class="auth-field"><label>Password</label><input type="password" id="reg-password" placeholder="Min. 6 characters" autocomplete="new-password"/></div>
+      <button class="auth-btn" id="register-btn">Create Account</button>
+    </div>
+
+    <div class="auth-error" id="auth-error"></div>
+    <div id="forgot-link" style="text-align:center;margin-top:12px;font-size:13px;color:#444;cursor:pointer">Forgot password?</div>
+  </div>
+</div>
+
+<!-- Forgot password sheet -->
+<div id="forgot-bg" style="position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.7);backdrop-filter:blur(5px);display:none;align-items:flex-end">
+  <div style="width:100%;background:#161616;border-radius:22px 22px 0 0;border-top:1px solid rgba(255,255,255,.08);padding:20px 20px 48px">
+    <div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 18px"></div>
+    <div style="font-size:17px;font-weight:800;margin-bottom:8px">Reset Password</div>
+    <div style="font-size:13px;color:#555;margin-bottom:16px">Enter your email and we'll send a reset code</div>
+    <input type="email" id="forgot-email" style="width:100%;background:#0d0d0d;border:1px solid #252525;border-radius:10px;color:#fff;font-family:inherit;font-size:15px;padding:12px 14px;outline:none;margin-bottom:10px" placeholder="your@email.com"/>
+    <div id="forgot-error" style="font-size:12px;color:#e03b3b;margin-bottom:10px;display:none"></div>
+    <div id="forgot-success" style="font-size:13px;color:#00c9a7;margin-bottom:10px;display:none;line-height:1.5"></div>
+    <button id="forgot-submit" style="width:100%;padding:15px;background:#f5a623;color:#000;border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;margin-bottom:10px">Send Reset Code</button>
+    <button id="forgot-close" style="width:100%;padding:14px;background:transparent;border:1px solid #222;border-radius:12px;color:#555;font-size:15px;cursor:pointer">Cancel</button>
+  </div>
+</div>
+
+<div id="offline-banner">📵 No signal — tracking locally, will sync when connected</div>
+<div id="sync-badge">⟳ Syncing…</div>
+<div id="map"></div>
+<div id="loading-overlay" style="position:fixed;inset:0;z-index:999;background:#0a0a0a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+  <div class="auth-logo">Canvass<span>Track</span></div>
+  <div style="width:32px;height:32px;border:3px solid #1c1c1c;border-top-color:#f5a623;border-radius:50%;animation:spin .8s linear infinite"></div>
+</div>
+<div id="toppill">
+  <div class="logo">Canvass<span>Track</span></div>
+  <div id="dot"></div>
+  <div id="timer"></div>
+</div>
+<div id="toast"></div>
+
+<div id="quickpin-toast">📍 <span id="quickpin-label">No Answer saved</span></div>
+
+<button id="follow-btn" title="Re-center on my location">◎</button>
+
+<!-- Storm controls -->
+<div id="storm-bar">
+  <button class="storm-type-btn active" data-stype="hail" style="color:#f5e623;border-color:#f5e62366">⛈️</button>
+  <button class="storm-type-btn active" data-stype="wind" style="color:#4a9eff;border-color:#4a9eff66">💨</button>
+  <button class="storm-type-btn active" data-stype="tornado" style="color:#a855f7;border-color:#a855f766">🌪️</button>
+  <div style="width:1px;height:20px;background:#222;margin:0 2px"></div>
+  <button class="storm-days-btn" data-days="30">30d</button>
+  <button class="storm-days-btn" data-days="90">90d</button>
+  <button class="storm-days-btn" data-days="180">6mo</button>
+  <button class="storm-days-btn active" data-days="365">1yr</button>
+  <span id="storm-loading" style="font-size:12px;color:#f5a623;display:none">⟳</span>
+  <button id="storm-close-btn" style="background:none;border:none;color:#555;font-size:16px;cursor:pointer;padding:0 0 0 2px">✕</button>
+</div>
+
+<!-- Map filter bar -->
+<div id="map-filter">
+  <button class="filt-btn active" data-status="all" style="color:#fff;border-color:rgba(255,255,255,.3)">All</button>
+  <button class="filt-btn active" data-status="Dropped Lit" style="color:#f5a623;border-color:#f5a623">Lit</button>
+  <button class="filt-btn active" data-status="No Answer" style="color:#666;border-color:#666">No Ans</button>
+  <button class="filt-btn active" data-status="Spoke to Owner" style="color:#4a9eff;border-color:#4a9eff">Spoke</button>
+  <button class="filt-btn active" data-status="Interested" style="color:#00c9a7;border-color:#00c9a7">Interest</button>
+  <button class="filt-btn active" data-status="Appointment" style="color:#a855f7;border-color:#a855f7">Appt</button>
+  <button class="filt-btn" id="filt-horizon" style="color:#f5a623;border-color:#f5a623;opacity:.5">🏠 Horizon</button>
+</div>
+
+
+<!-- Pin drop crosshair -->
+<div id="pin-crosshair">
+  <svg viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="26" cy="26" r="10" stroke="#f5a623" stroke-width="2.5"/>
+    <line x1="26" y1="4"  x2="26" y2="14" stroke="#f5a623" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="26" y1="38" x2="26" y2="48" stroke="#f5a623" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="4"  y1="26" x2="14" y2="26" stroke="#f5a623" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="38" y1="26" x2="48" y2="26" stroke="#f5a623" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="26" cy="26" r="3" fill="#f5a623"/>
+  </svg>
+  <div id="pin-crosshair-stem"></div>
+</div>
+
+<!-- Pin drop confirm bar -->
+<div id="pin-confirm-bar">
+  <button id="pin-cancel-btn">✕</button>
+  <button id="pin-confirm-btn">📍 LOG STOP</button>
+</div>
+
+<div id="bottom">
+  <button class="icon-btn" id="settingsBtn">⚙️</button>
+  <button id="trackBtn">▶ Start Tracking</button>
+  <button class="icon-btn" id="historyBtn">📋</button>
+  <button class="icon-btn" id="stormBtn" title="Storm data">⛈️</button>
+  <button class="icon-btn" id="filterBtn" title="Filter pins">🔍</button>
+  <button class="icon-btn" id="pinBtn">📍</button>
+</div>
+
+
+
+<!-- Stats Screen -->
+<div id="stats-screen">
+  <div id="stats-header">
+    <div class="stats-title">📊 Stats</div>
+    <button id="stats-close">✕</button>
+  </div>
+  <div class="stats-body">
+    <!-- Period tabs -->
+    <div class="stats-tabs">
+      <button class="stats-tab active" data-period="today">Today</button>
+      <button class="stats-tab" data-period="week">Week</button>
+      <button class="stats-tab" data-period="month">Month</button>
+      <button class="stats-tab" data-period="allTime">All Time</button>
+    </div>
+    <!-- Summary cards row -->
+    <div id="stats-cards" class="stats-grid"></div>
+    <!-- Chart toggle -->
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <button class="stats-chart-btn active" data-chart="daily">Daily</button>
+      <button class="stats-chart-btn" data-chart="weekly">Weekly</button>
+      <button class="stats-chart-btn" data-chart="funnel">Funnel</button>
+    </div>
+    <!-- Chart canvas area -->
+    <div id="stats-chart-wrap" style="background:#111;border:1px solid #1c1c1c;border-radius:14px;padding:16px;margin-bottom:16px">
+      <canvas id="stats-canvas" style="width:100%;display:block"></canvas>
+    </div>
+    <!-- Follow-ups + status breakdown -->
+    <div id="stats-bottom"></div>
+  </div>
+</div>
+
+<!-- Full-screen photo viewer -->
+<div id="photo-viewer">
+  <button id="photo-viewer-close">✕</button>
+  <img id="photo-viewer-img" src="" alt=""/>
+</div>
+
+<!-- Settings Panel -->
+<div id="settings-panel">
+  <div id="settings-header">
+    <div class="settings-title">Settings</div>
+    <button id="settings-close">✕</button>
+  </div>
+  <div class="settings-body">
+
+    <!-- Account -->
+    <div class="settings-section">
+      <div class="settings-section-label">Account</div>
+      <div class="settings-card">
+        <div class="settings-row">
+          <div class="settings-row-label">Name</div>
+          <div class="settings-row-value" id="settings-name">—</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Email</div>
+          <div class="settings-row-value" id="settings-email">—</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Password</div>
+          <button class="settings-row-action" id="pw-toggle-btn">Change</button>
+        </div>
+        <div id="pw-form">
+          <input class="pw-input" type="password" id="pw-current" placeholder="Current password" autocomplete="current-password"/>
+          <input class="pw-input" type="password" id="pw-new" placeholder="New password (min. 6 chars)" autocomplete="new-password"/>
+          <input class="pw-input" type="password" id="pw-confirm" placeholder="Confirm new password" autocomplete="new-password"/>
+          <div class="pw-error" id="pw-error"></div>
+          <div class="pw-success" id="pw-success">Password updated successfully!</div>
+          <button class="pw-save-btn" id="pw-save-btn">Update Password</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="settings-section">
+      <div class="settings-section-label">Your Data</div>
+      <div class="settings-card">
+        <div class="settings-row">
+          <div class="settings-row-label">Total Routes</div>
+          <div class="settings-row-value" id="settings-routes">—</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Total Pins</div>
+          <div class="settings-row-value" id="settings-pins">—</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Photos Taken</div>
+          <div class="settings-row-value" id="settings-photos">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Logout -->
+    <div class="settings-section">
+      <div class="settings-section-label">Session</div>
+      <div class="settings-card">
+        <div class="settings-row" style="cursor:pointer" id="settings-logout-row">
+          <div class="settings-row-label" style="color:#e03b3b">Log Out</div>
+          <div style="color:#e03b3b;font-size:18px">→</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-card">
+        <div class="settings-row" style="cursor:pointer" id="open-stats-row">
+          <div class="settings-row-label">📊 Stats &amp; Performance</div>
+          <div style="color:#444;font-size:18px">›</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-version">CanvassTrack · Prototype</div>
+  </div>
+</div>
+
+<button id="coverage-add-btn">＋ Add Route</button>
+
+<!-- History Panel -->
+<div id="hist-panel">
+  <div id="hist-header">
+    <div class="hist-title">History</div>
+    <button id="hist-close">✕</button>
+  </div>
+  <div id="hist-tabs">
+    <div class="htab active" data-tab="routes">Routes</div>
+    <div class="htab" data-tab="pins">Pins</div>
+    <div class="htab" data-tab="coverage">Coverage</div>
+    <div class="htab" data-tab="storms">⛈️</div>
+  </div>
+<div style="padding:10px 16px 0;flex-shrink:0">
+  <input id="pin-search" type="text" placeholder="🔍  Search address, name, notes…" style="width:100%;background:#1a1a1a;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:11px 14px;outline:none"/>
+</div>
+  <div id="hist-body"></div>
+  <div id="coverage-wrap">
+    <div id="coverage-map"></div>
+    <div id="cov-filter">
+      <button class="cov-day-btn active" data-cdays="30">30 days</button>
+      <button class="cov-day-btn" data-cdays="90">90 days</button>
+      <button class="cov-day-btn" data-cdays="365">1 year</button>
+      <button class="cov-day-btn" data-cdays="9999">All time</button>
+    </div>
+    <div id="coverage-hint-text">Your routes + shared routes</div>
+    <div id="storm-legend">
+      <div style="font-size:10px;color:#888;font-weight:800;letter-spacing:1px;text-transform:uppercase;margin-bottom:5px">Storm Events</div>
+      <div style="font-size:10px;color:#666;margin-bottom:3px;font-weight:700">⛈️ HAIL (circles)</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#f5e623"></div><span style="color:#ccc">1.0–1.5" quarter</span></div>
+      <div class="legend-row"><div class="legend-dot" style="background:#f5a623"></div><span style="color:#ccc">1.5–2.0" golf ball</span></div>
+      <div class="legend-row"><div class="legend-dot" style="background:#e03b3b"></div><span style="color:#ccc">2.0"+ baseball</span></div>
+      <div style="font-size:10px;color:#666;margin:5px 0 3px;font-weight:700">💨 WIND (diamonds)</div>
+      <div class="legend-row"><div style="width:10px;height:10px;background:#4a9eff;transform:rotate(45deg);flex-shrink:0"></div><span style="color:#ccc">45–65mph</span></div>
+      <div class="legend-row"><div style="width:10px;height:10px;background:#0066ff;transform:rotate(45deg);flex-shrink:0"></div><span style="color:#ccc">65kt+ (~75mph+)</span></div>
+      <div style="font-size:10px;color:#666;margin:5px 0 3px;font-weight:700">🌪️ TORNADO (triangles)</div>
+      <div class="legend-row"><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #d4a0ff;flex-shrink:0"></div><span style="color:#ccc">EF0–EF1</span></div>
+      <div class="legend-row"><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #a855f7;flex-shrink:0"></div><span style="color:#ccc">EF2–EF3</span></div>
+      <div class="legend-row"><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #7c3aed;flex-shrink:0"></div><span style="color:#ccc">EF4–EF5</span></div>
+    </div>
+  </div>
+
+  <!-- Storms tab panel -->
+  <div id="storms-wrap" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+    <div style="padding:10px 14px 8px;display:flex;align-items:center;gap:7px;flex-wrap:nowrap;border-bottom:1px solid #1c1c1c;flex-shrink:0;overflow-x:auto">
+      <button class="storm-tab-type active" data-stt="hail" style="padding:5px 10px;border-radius:14px;font-size:12px;font-weight:800;border:1.5px solid #f5e62366;color:#f5e623;background:rgba(245,230,35,.08);cursor:pointer;white-space:nowrap">⛈️ Hail</button>
+      <button class="storm-tab-type active" data-stt="wind" style="padding:5px 10px;border-radius:14px;font-size:12px;font-weight:800;border:1.5px solid #4a9eff66;color:#4a9eff;background:rgba(74,158,255,.08);cursor:pointer;white-space:nowrap">💨 Wind</button>
+      <button class="storm-tab-type active" data-stt="tornado" style="padding:5px 10px;border-radius:14px;font-size:12px;font-weight:800;border:1.5px solid #a855f766;color:#a855f7;background:rgba(168,85,247,.08);cursor:pointer;white-space:nowrap">🌪️ Tornado</button>
+      <div style="margin-left:auto;display:flex;gap:4px;flex-shrink:0">
+        <button class="storm-tab-days" data-std="30">30d</button>
+        <button class="storm-tab-days" data-std="90">90d</button>
+        <button class="storm-tab-days" data-std="180">6mo</button>
+        <button class="storm-tab-days active" data-std="365">1yr</button>
+      </div>
+    </div>
+    <div style="padding:6px 14px;font-size:11px;color:#444;flex-shrink:0;border-bottom:1px solid #1a1a1a" id="storms-meta">Tap to load storm data</div>
+    <div id="storms-map" style="flex:0 0 40%;min-height:0;position:relative"></div>
+    <div id="storms-list" style="flex:1;overflow-y:auto;padding:8px 12px 80px"></div>
+  </div>
+</div>
+
+
+
+<!-- Custom Confirm Sheet -->
+<div id="confirm-bg">
+  <div id="confirm-sheet">
+    <div id="confirm-msg"></div>
+    <button id="confirm-ok">Confirm</button>
+    <button id="confirm-cancel">Cancel</button>
+  </div>
+</div>
+
+<!-- Pin Detail Sheet -->
+<div id="detail-bg">
+  <div id="detail-sheet">
+    <img id="detail-photo" src="" alt="roof photo"/>
+    <div class="detail-body">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="detail-handle" style="margin:0"></div>
+        <button id="detail-close-btn" style="width:32px;height:32px;border-radius:50%;background:#222;border:1px solid #2a2a2a;color:#888;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
+      </div>
+      <div class="detail-top">
+        <div class="detail-addr" id="detail-addr"></div>
+        <span class="detail-badge" id="detail-badge"></span>
+      </div>
+      <div id="detail-contact" style="display:none;margin:10px 0 4px"></div>
+      <div class="detail-notes" id="detail-notes"></div>
+      <!-- Damage photos gallery in detail -->
+      <div id="detail-damage-section" style="margin:12px 0;display:none">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#444;margin-bottom:8px">Damage Photos</div>
+        <div class="damage-gallery" id="detail-damage-gallery"></div>
+      </div>
+      <div class="detail-meta" id="detail-meta"></div>
+      <div id="detail-followup" style="margin-bottom:16px"></div>
+      <div class="detail-btns">
+        <button class="detail-edit" id="detail-edit-btn">✏️ Edit</button>
+        <button id="detail-nav-btn" style="padding:15px 16px;background:rgba(0,201,167,.12);color:#00c9a7;border:1px solid rgba(0,201,167,.3);border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">🧭</button>
+        <button class="detail-delete" id="detail-delete-btn">🗑 Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Pin Sheet -->
+<div id="sheet-bg">
+  <div id="sheet">
+    <div class="handle"></div>
+    <div class="sheet-header">
+      <div class="stitle" id="sheet-title">📍 Log this stop</div>
+      <button id="delete-pin-btn">🗑 Delete</button>
+    </div>
+
+    <div class="field-label" style="margin-top:10px">Status</div>
+    <div class="stags">
+      <div class="tag" data-s="Dropped Lit">Dropped Lit</div>
+      <div class="tag" data-s="No Answer">No Answer</div>
+      <div class="tag" data-s="Spoke to Owner">Spoke to Owner</div>
+      <div class="tag" data-s="Interested">Interested</div>
+      <div class="tag" data-s="Appointment">Appointment</div>
+    </div>
+
+    <div class="field-label">Address</div>
+    <div class="saddr-row">
+      <input type="text" id="saddr-input" placeholder="123 Main St"/>
+    </div>
+
+    <div class="field-label">Notes</div>
+    <textarea id="notes" placeholder="Roof age, damage, owner info…"></textarea>
+
+    <!-- Collapsible details section -->
+    <button id="sheet-more-btn" style="width:100%;padding:11px;background:#1a1a1a;border:1px solid #252525;border-radius:11px;color:#555;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:6px">
+      <span id="sheet-more-icon">▼</span> More Details
+    </button>
+
+    <div id="sheet-details" style="display:none">
+      <div class="field-label">Owner Name</div>
+      <div class="saddr-row" style="margin-bottom:14px">
+        <input type="text" id="owner-name-input" placeholder="John Smith" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;min-height:44px"/>
+      </div>
+
+      <div class="field-label">Phone</div>
+      <div class="saddr-row" style="margin-bottom:14px">
+        <input type="tel" id="phone-input" placeholder="(555) 123-4567" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;min-height:44px"/>
+      </div>
+
+      <div class="field-label">Interaction Date</div>
+      <div class="saddr-row" style="margin-bottom:14px">
+        <input type="date" id="interaction-date-input" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;color-scheme:dark;min-height:44px"/>
+      </div>
+
+      <div class="field-label">Follow-up Date</div>
+      <div class="saddr-row" style="margin-bottom:14px">
+        <input type="date" id="followup-input" style="flex:1;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;color-scheme:dark;min-height:44px"/>
+      </div>
+
+      <div class="horizon-toggle-wrap" id="horizon-toggle">
+        <div class="horizon-toggle-left">
+          <div class="horizon-toggle-title">🏠 Horizon Shingle</div>
+          <div class="horizon-toggle-sub">Tap to flag — rare, high-priority lead</div>
+        </div>
+        <div class="horizon-switch"></div>
+      </div>
+    </div>
+
+    <div class="photo-section">
+      <div class="field-label">Cover Photo <span style="color:#444;font-weight:400;text-transform:none;letter-spacing:0">— shows on map marker</span></div>
+      <div id="photo-preview-wrap">
+        <img id="photo-preview" src="" alt=""/>
+        <button id="photo-remove">✕</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="photo-btn-camera" onclick="document.getElementById('photo-input-camera').click()" style="flex:1;padding:12px;background:#1a1a1a;border:1.5px dashed #2a2a2a;border-radius:12px;color:#555;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">📷 Camera</button>
+        <button id="photo-btn" onclick="document.getElementById('photo-input').click()" style="flex:1;padding:12px;background:#1a1a1a;border:1.5px dashed #2a2a2a;border-radius:12px;color:#555;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">🖼 Gallery</button>
+      </div>
+      <input type="file" id="photo-input-camera" accept="image/*" capture="environment" style="display:none"/>
+      <input type="file" id="photo-input" accept="image/*"/>
+    </div>
+
+    <div class="field-label" style="margin-top:4px">Damage Photos</div>
+    <div class="damage-gallery" id="sheet-damage-gallery">
+      <button class="damage-add-btn" id="damage-add-btn" onclick="document.getElementById('damage-photo-input').click()">+</button>
+    </div>
+    <input type="file" id="damage-photo-input" accept="image/*" style="display:none" multiple/>
+
+    <div class="sbtns">
+      <button class="bcancel" id="bcancel">Cancel</button>
+      <button class="bsave" id="bsave">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STATUS_COLORS={'Dropped Lit':'#f5a623','No Answer':'#666','Spoke to Owner':'#4a9eff','Interested':'#00c9a7','Appointment':'#a855f7'};
+const SESSION_COLORS=['#f5a623','#00c9a7','#4a9eff','#e03b3b','#a855f7','#f97316'];
+// Auth token stored in localStorage
+let authToken = localStorage.getItem('ct_token') || null;
+let currentUser = JSON.parse(localStorage.getItem('ct_user') || 'null');
+
+function authHeaders(extra={}) {
+  return { 'Content-Type': 'application/json', ...(authToken ? { 'Authorization': 'Bearer ' + authToken } : {}), ...extra };
+}
+
+const api={
+  get:   p    => fetch(p, { headers: authHeaders() }).then(r=>r.json()),
+  post:  (p,b)=> fetch(p,{method:'POST',  headers:authHeaders(), body:JSON.stringify(b)}).then(r=>r.json()),
+  patch: (p,b)=> fetch(p,{method:'PATCH', headers:authHeaders(), body:b?JSON.stringify(b):undefined}).then(r=>r.json()),
+  del:   p    => fetch(p,{method:'DELETE', headers:authHeaders()}).then(r=>r.json()),
+};
+
+let map,coverageMap,youMarker;
+let tracking=false,watchId=null,curSession=null,curLine=null;
+let startTime=null,timerInt=null;
+let sessions=[],pins=[],allLines=[],allPinMarkers=[];
+let coordBuffer=[],pendingLL=null,selStatus='',pendingPhoto=null;
+let editingPin=null; // null = new pin, object = editing existing
+let histTab='routes',coverageMapInit=false;
+let importedRoutes=[], importedPins=[];
+let followMode=true; // auto-center map on user while tracking
+let _mapFitted=false;
+let pinClusterGroup=null; // auto-fit map to data on first load
+
+// Map
+map=L.map('map',{zoomControl:false,attributionControl:false}).setView([38.85,-76.53],13);
+addSatTiles(map);
+L.control.zoom({position:'topright'}).addTo(map);
+// map click disabled — use pin button flow
+map.on('dragstart',()=>{ if(tracking){ followMode=false; showFollowBtn(true); } });
+
+function addSatTiles(m){
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}).addTo(m);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,opacity:.9}).addTo(m);
+}
+
+let tT;
+function toast(msg,ms=2800){
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  // Move toast to top if pin confirm bar is active to avoid overlap
+  if(document.getElementById('pin-confirm-bar').classList.contains('active')){
+    el.style.bottom='auto'; el.style.top='80px';
+  } else {
+    el.style.top=''; el.style.bottom='160px';
   }
-});
+  el.classList.add('show');
+  clearTimeout(tT);tT=setTimeout(()=>el.classList.remove('show'),ms);
+}
 
-// Login
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password)
-      return res.status(400).json({ error: 'Email and password required' });
+async function load(){
+  try{
+    // Load all data in parallel — sessions, pins, and shared routes
+    const [sessData, pinData, sharedData] = await Promise.all([
+      api.get('/api/sessions'),
+      api.get('/api/pins'), // returns without full photo data for perf
+      api.get('/api/coverage/shared').catch(()=>({sessions:[],pins:[]}))
+    ]);
+    sessions       = sessData  || [];
+    pins           = pinData   || [];
+    importedRoutes = sharedData.sessions || [];
+    importedPins   = sharedData.pins     || [];
+    renderAll();
+    const ov=document.getElementById('loading-overlay'); if(ov) ov.style.display='none';
+  }catch(e){ console.error('load error',e); const ov=document.getElementById('loading-overlay'); if(ov) ov.style.display='none'; }
+}
 
-    const user = db.getUserByEmail(email.toLowerCase().trim());
-    if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+function sCol(i){return SESSION_COLORS[i%SESSION_COLORS.length];}
 
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(401).json({ error: 'Invalid email or password' });
+let _lastRenderHash = '';
+function renderAll(){
+  const hash = sessions.length + '|' + pins.length + '|' + importedRoutes.length + '|' + (pins[0]?.id||'') + '|' + (pins[pins.length-1]?.id||'');
+  if(hash === _lastRenderHash) return;
+  _lastRenderHash = hash;
 
-    const token = jwt.sign({ userId: user.id }, SECRET, { expiresIn: '90d' });
-    // Migrate any legacy (pre-auth) data to this user on first login
-    db.migrateLegacyData(user.id);
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email } });
-  } catch(e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+  // Remove existing layers
+  allLines.forEach(l=>map.removeLayer(l));
+  if(pinClusterGroup){ map.removeLayer(pinClusterGroup); }
+  else { allPinMarkers.forEach(m=>map.removeLayer(m)); }
+  allLines=[];allPinMarkers=[];
 
-// Forgot password — in production this would email a reset link
-// For now it logs the request and returns success (admin can use /api/auth/admin-reset)
-app.post('/api/auth/forgot', async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email required' });
-    const user = db.getUserByEmail(email.toLowerCase().trim());
-    // Always return success to avoid email enumeration
-    console.log(`Password reset requested for: ${email} - exists: ${!!user}`);
-    res.json({ sent: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// Admin reset (use this manually if needed: POST /api/auth/admin-reset with {email, newPassword, adminKey})
-app.post('/api/auth/admin-reset', async (req, res) => {
-  try {
-    const { email, newPassword, adminKey } = req.body;
-    if (adminKey !== (process.env.ADMIN_KEY || 'canvasstrack-admin')) 
-      return res.status(403).json({ error: 'Invalid admin key' });
-    const user = db.getUserByEmail(email?.toLowerCase().trim());
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    const hashed = await bcrypt.hash(newPassword, 10);
-    db.updatePassword(user.id, hashed);
-    res.json({ reset: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// Get current user
-app.get('/api/auth/me', requireAuth, (req, res) => {
-  try {
-    const user = db.getUserById(req.userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
-  } catch(e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Change password
-app.patch('/api/auth/password', requireAuth, async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword)
-      return res.status(400).json({ error: 'Current and new password required' });
-    if (newPassword.length < 6)
-      return res.status(400).json({ error: 'New password must be at least 6 characters' });
-    const user = db.getUserById(req.userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    const fullUser = db.getUserByEmail(user.email);
-    const match = await bcrypt.compare(currentPassword, fullUser.password);
-    if (!match) return res.status(401).json({ error: 'Current password is incorrect' });
-    const hashed = await bcrypt.hash(newPassword, 10);
-    db.updatePassword(req.userId, hashed);
-    res.json({ updated: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Sessions (protected) ───────────────────────────────────────────
-app.get('/api/sessions', requireAuth, (req, res) => {
-  try { res.json(db.getUserSessions(req.userId)); }
-  catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/sessions', requireAuth, (req, res) => {
-  try {
-    const { id, color } = req.body;
-    if (!id || !color) return res.status(400).json({ error: 'id and color required' });
-    db.createSession(id, req.userId, color);
-    res.json({ id, color, started_at: new Date().toISOString() });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/sessions/:id/coords', requireAuth, (req, res) => {
-  try {
-    const { coords } = req.body;
-    if (!Array.isArray(coords) || !coords.length)
-      return res.status(400).json({ error: 'coords array required' });
-    db.insertCoordsBatch(req.params.id, coords);
-    res.json({ saved: coords.length });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.patch('/api/sessions/:id/end', requireAuth, (req, res) => {
-  try { db.endSession(req.params.id, req.userId); res.json({ ended: true }); }
-  catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Pins (protected) ──────────────────────────────────────────────
-app.get('/api/pins', requireAuth, (req, res) => {
-  try { res.json(db.getUserPins(req.userId)); }
-  catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// Get single pin with full data
-app.get('/api/pins/:id', requireAuth, (req, res) => {
-  try {
-    const pins = db.getUserPins(req.userId);
-    const pin = pins.find(p => p.id === req.params.id);
-    if(!pin) return res.status(404).json({ error: 'Pin not found' });
-    res.json(pin);
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/pins', requireAuth, (req, res) => {
-  try {
-    const pin = req.body;
-    if (!pin.id || !pin.lat || !pin.lng)
-      return res.status(400).json({ error: 'id, lat, lng required' });
-    db.createPin(pin, req.userId); // pin includes owner_name, phone, followup_date
-    res.json({ ...pin, user_id: req.userId, created_at: new Date().toISOString() });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.patch('/api/pins/:id', requireAuth, (req, res) => {
-  try {
-    db.updatePin({ id: req.params.id, ...req.body }, req.userId);
-    res.json({ updated: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/pins/:id', requireAuth, (req, res) => {
-  try { db.deletePin(req.params.id, req.userId); res.json({ deleted: true }); }
-  catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Shared Routes ─────────────────────────────────────────────────
-
-// Generate a share code for a session
-app.post('/api/sessions/:id/share', requireAuth, (req, res) => {
-  try {
-    // Check if already has a code
-    const existing = db.getShareCodeForSession(req.params.id, req.userId);
-    if (existing) return res.json({ code: existing.share_code });
-
-    // Generate unique 6-char code
-    let code, tries = 0;
-    do {
-      code = Math.random().toString(36).slice(2, 8).toUpperCase();
-      tries++;
-    } while (db.getSharedByCode(code) && tries < 10);
-
-    db.createShareCode(code, req.params.id, req.userId);
-    res.json({ code });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// Import a shared route by code
-app.post('/api/coverage/import', requireAuth, (req, res) => {
-  try {
-    const { code } = req.body;
-    if (!code) return res.status(400).json({ error: 'Share code required' });
-
-    const shared = db.getSharedByCode(code.trim());
-    if (!shared) return res.status(404).json({ error: 'Route not found — check the code' });
-    if (shared.created_by === req.userId)
-      return res.status(400).json({ error: "That's your own route!" });
-
-    db.importRoute(req.userId, shared.session_id, code.toUpperCase(), shared.owner_name);
-    res.json({ imported: true, owner_name: shared.owner_name });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// Get all imported routes + their pins
-app.get('/api/coverage/shared', requireAuth, (req, res) => {
-  try {
-    res.json({
-      sessions: db.getImportedRoutes(req.userId),
-      pins:     db.getImportedPins(req.userId),
-    });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// Remove an imported route
-app.delete('/api/coverage/shared/:sessionId', requireAuth, (req, res) => {
-  try {
-    db.removeImportedRoute(req.userId, req.params.sessionId);
-    res.json({ removed: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-
-// ── Storm Data (NOAA SPC — MD/VA/PA focused, 3-year history) ─────
-// Source: https://www.spc.noaa.gov/wcm/data/{year}_{type}.csv
-// Hail, wind, tornado for MD, VA, PA, DE, WV — 13x more data than IEM for this region
-const https = require('https');
-const TARGET_STATES = new Set(['MD', 'VA', 'PA', 'DE', 'WV', 'DC']);
-let stormCache = { data: null, fetchedAt: 0 };
-const STORM_TTL = 24 * 60 * 60 * 1000; // 24hr — historical data doesn't change
-
-// Generic fetch helper
-function fetchJSON(url, redirectCount = 0) {
-  return new Promise((resolve, reject) => {
-    if (redirectCount > 5) return reject(new Error('Too many redirects'));
-    const lib = url.startsWith('https') ? require('https') : require('http');
-    const req = lib.get(url, { headers: { 'User-Agent': 'CanvassTrack/1.0' } }, res => {
-      if ((res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) && res.headers.location) {
-        const redirectUrl = res.headers.location.startsWith('http')
-          ? res.headers.location
-          : new URL(res.headers.location, url).toString();
-        res.resume();
-        return fetchJSON(redirectUrl, redirectCount + 1).then(resolve).catch(reject);
+  // Create fresh cluster group
+  if(typeof L.markerClusterGroup === 'function'){
+    pinClusterGroup = L.markerClusterGroup({
+      maxClusterRadius: 40,
+      disableClusteringAtZoom: 17,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      iconCreateFunction: cluster => {
+        const n = cluster.getChildCount();
+        const sz = n > 20 ? 44 : n > 10 ? 38 : 32;
+        return L.divIcon({
+          html: `<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:#f5a623;color:#000;font-size:13px;font-weight:900;display:flex;align-items:center;justify-content:center;border:3px solid rgba(255,255,255,.8);box-shadow:0 2px 8px rgba(0,0,0,.5)">${n}</div>`,
+          className:'', iconSize:[sz,sz], iconAnchor:[sz/2,sz/2]
+        });
       }
-      let raw = '';
-      res.on('data', d => raw += d);
-      res.on('end', () => {
-        if (res.statusCode !== 200) return reject(new Error('HTTP ' + res.statusCode));
-        try { resolve(JSON.parse(raw)); }
-        catch(e) { reject(new Error('JSON parse error: ' + raw.slice(0, 100))); }
-      });
     });
-    req.on('error', reject);
-    req.setTimeout(30000, () => { req.destroy(); reject(new Error('timeout')); });
-  });
-}
+    map.addLayer(pinClusterGroup);
+  } else {
+    pinClusterGroup = null;
+  }
 
-// Fetch plain text (for CSV)
-function fetchText(url) {
-  return new Promise((resolve, reject) => {
-    const lib = url.startsWith('https') ? require('https') : require('http');
-    const req = lib.get(url, { headers: { 'User-Agent': 'CanvassTrack/1.0' } }, res => {
-      let raw = '';
-      res.on('data', d => raw += d);
-      res.on('end', () => resolve(raw));
-    });
-    req.on('error', reject);
-    req.setTimeout(30000, () => { req.destroy(); reject(new Error('timeout')); });
-  });
-}
-
-async function fetchSPCcsv(year, type) {
-  const url = `https://www.spc.noaa.gov/wcm/data/${year}_${type}.csv`;
-  try {
-    const text = await fetchText(url);
-    const lines = text.trim().split('\n');
-    const hdr   = lines[0].split(',');
-    const stIdx   = hdr.indexOf('st');
-    const slatIdx = hdr.indexOf('slat');
-    const slonIdx = hdr.indexOf('slon');
-    const magIdx  = hdr.indexOf('mag');
-    const dateIdx = hdr.indexOf('date');
-
-    const results = [];
-    for (let i = 1; i < lines.length; i++) {
-      const p = lines[i].split(',');
-      const state = (p[stIdx] || '').trim();
-      if (!TARGET_STATES.has(state)) continue;
-
-      const lat = parseFloat(p[slatIdx]);
-      const lng = parseFloat(p[slonIdx]);
-      const mag = parseFloat(p[magIdx]) || 0;
-      const date = (p[dateIdx] || '').split(' ')[0];
-      if (!lat || !lng || !date || isNaN(lat) || isNaN(lng)) continue;
-
-      // Magnitude thresholds — err on lower side to catch more events
-      if (type === 'hail' && mag < 0.75) continue;
-      if (type === 'wind' && mag < 40)   continue;
-
-      results.push({
-        type: type === 'torn' ? 'tornado' : type,
-        mag: Math.round(mag * 100) / 100,
-        lat, lng, date, state,
-        location: '',
-        county: '',
-      });
+  // Draw routes
+  sessions.forEach((s,i)=>{
+    if(s.coords&&s.coords.length>1){
+      const pl=L.polyline(s.coords.map(c=>[c.lat,c.lng]),{color:s.color||sCol(i),weight:6,opacity:1}).addTo(map);
+      allLines.push(pl);
     }
-    console.log(`SPC ${year} ${type}: ${results.length} events in target states`);
-    return results;
+  });
+
+  // Draw pins and shared pins
+  pins.forEach(p=>drawPin(p));
+  importedPins.forEach(p=>drawSharedPin(p));
+
+  // Auto-fit map to data on first load
+  if(!_mapFitted && (pins.length > 0 || sessions.length > 0)) {
+    _mapFitted = true;
+    const coords = [];
+    pins.forEach(p => coords.push([p.lat, p.lng]));
+    sessions.forEach(s => (s.coords||[]).forEach(c2 => coords.push([c2.lat, c2.lng])));
+    if(coords.length > 0) {
+      map.fitBounds(L.latLngBounds(coords), {padding:[40,40], maxZoom:15});
+    }
+  }
+}
+
+function drawPin(pin){
+  const c=STATUS_COLORS[pin.status]||'#f5a623';
+  const hasRealPhoto = pin.photo && pin.photo.length > 1000 && !pin.photo.includes('__THUMB__');
+  let iconHtml, iconSize, iconAnchor;
+  if(hasRealPhoto){
+    // Show circular thumbnail above a pin stem
+    iconHtml=`
+      <div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
+        <div style="
+          width:44px;height:44px;border-radius:50%;
+          border:3px solid ${c};
+          background:url('${pin.photo}') center/cover;
+          box-shadow:0 3px 10px rgba(0,0,0,.7);
+          flex-shrink:0;
+        "></div>
+        <div style="width:3px;height:8px;background:${c};border-radius:0 0 2px 2px;margin-top:-1px"></div>
+        <div style="width:7px;height:7px;border-radius:50%;background:${c};margin-top:-2px;box-shadow:0 2px 4px rgba(0,0,0,.5)"></div>
+      </div>`;
+    iconSize=[44,62];iconAnchor=[22,62];
+  } else {
+    iconHtml=`<div class="pin-drop" style="background:${c}"></div>`;
+    iconSize=[14,14];iconAnchor=[7,14];
+  }
+  const icon=L.divIcon({html:iconHtml,iconSize,iconAnchor,className:''});
+  const m=L.marker([pin.lat,pin.lng],{icon}).on('click',()=>openDetail(pin.id));
+  try {
+    if(pinClusterGroup && map.hasLayer(pinClusterGroup)) pinClusterGroup.addLayer(m);
+    else m.addTo(map);
+  } catch(e) { m.addTo(map); }
+  allPinMarkers.push(m);
+  return m;
+}
+
+
+
+// Draw a shared (imported) pin on the main map — different style to distinguish
+function drawSharedPin(pin){
+  const c = STATUS_COLORS[pin.status]||'#00c9a7';
+  const icon = L.divIcon({
+    html:`<div class="pin-drop" style="background:${c};opacity:0.85;border-color:rgba(255,255,255,.6)"></div>`,
+    iconSize:[14,14], iconAnchor:[7,14], className:''
+  });
+  const m = L.marker([pin.lat,pin.lng],{icon})
+    .bindPopup(`<div style="min-width:130px">
+      <b style="font-size:14px">${pin.address||'Stop'}</b><br>
+      <span style="color:${c};font-weight:700;font-size:12px">${pin.status||'–'}</span><br>
+      <span style="color:#888;font-size:11px">📤 from ${pin.owner_name||'Partner'}</span>
+      ${pin.notes?`<br><span style="color:#999;font-size:12px">${pin.notes}</span>`:''}
+    </div>`)
+    .addTo(map);
+  allPinMarkers.push(m);
+}
+
+function setYou(lat,lng){
+  if(youMarker)map.removeLayer(youMarker);
+  const icon=L.divIcon({html:'<div class="you-ring"></div>',iconSize:[16,16],iconAnchor:[8,8],className:''});
+  youMarker=L.marker([lat,lng],{icon,zIndexOffset:9999}).addTo(map);
+}
+
+
+
+
+// Navigate to pin address
+document.getElementById('detail-nav-btn').addEventListener('click', () => {
+  const pin = pins.find(p => p.id === detailPinId);
+  if(!pin) return;
+  openMapsNav(pin.lat, pin.lng, pin.address);
+});
+
+function openMapsNav(lat, lng, address) {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const label = encodeURIComponent(address || 'Destination');
+  if(isIOS) {
+    // Apple Maps — opens turn-by-turn directions
+    window.open(`maps://?daddr=${lat},${lng}&dirflg=d`, '_blank');
+  } else {
+    // Google Maps directions
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, '_blank');
+  }
+}
+
+// ── Custom confirm (replaces browser confirm()) ────────────────────
+let confirmCallback = null;
+function showConfirm(msg, onConfirm, confirmLabel='Confirm'){
+  confirmCallback = onConfirm;
+  document.getElementById('confirm-msg').textContent = msg;
+  document.getElementById('confirm-ok').textContent = confirmLabel;
+  document.getElementById('confirm-bg').classList.add('open');
+}
+document.getElementById('confirm-ok').addEventListener('click',()=>{
+  document.getElementById('confirm-bg').classList.remove('open');
+  if(confirmCallback){ confirmCallback(); confirmCallback=null; }
+});
+document.getElementById('confirm-cancel').addEventListener('click',()=>{
+  document.getElementById('confirm-bg').classList.remove('open');
+  confirmCallback=null;
+});
+
+// ── Pin Detail Sheet ─────────────────────────────────────────────
+let detailPinId = null;
+
+function openDetail(pinId){
+  const pin = pins.find(p=>p.id===pinId);
+  if(!pin) return;
+  // If pin has photo placeholder, fetch full data first
+  if(pin._hasPhoto && (!pin.photo || pin.photo.includes('__THUMB__'))){
+    api.get('/api/pins/'+pinId).then(fullPin => {
+      const idx = pins.findIndex(p=>p.id===pinId);
+      if(idx>=0) pins[idx] = fullPin;
+      _openDetailWithPin(fullPin);
+    }).catch(() => _openDetailWithPin(pin));
+    return;
+  }
+  _openDetailWithPin(pin);
+}
+function _openDetailWithPin(pin){
+  detailPinId = pin.id;
+  const c = STATUS_COLORS[pin.status]||'#f5a623';
+  const d = new Date(pin.created_at||Date.now());
+
+  document.getElementById('detail-addr').textContent = pin.address||'Unnamed stop';
+  const badge = document.getElementById('detail-badge');
+  badge.textContent = pin.status||'–';
+  badge.style.cssText = `background:${c}22;color:${c};border:1px solid ${c}44`;
+
+  const notesEl = document.getElementById('detail-notes');
+  notesEl.textContent = pin.notes||'';
+  notesEl.style.display = pin.notes ? 'block' : 'none';
+
+  const interactionStr = pin.interaction_date ? formatDate(pin.interaction_date) : d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  document.getElementById('detail-meta').textContent = '📅 Interacted: ' + interactionStr;
+
+  const photo = document.getElementById('detail-photo');
+  if(pin.photo){ photo.src=pin.photo; photo.classList.add('show'); }
+  else { photo.src=''; photo.classList.remove('show'); }
+
+  // Horizon shingle badge
+  const existingBadge = document.querySelector('.horizon-badge');
+  if(existingBadge) existingBadge.remove();
+  if(pin.horizon_shingle) {
+    const badge = document.createElement('div');
+    badge.className = 'horizon-badge';
+    badge.innerHTML = '🏠 Horizon Shingle — High Priority';
+    document.querySelector('.detail-top').insertAdjacentElement('afterend', badge);
+  }
+
+  // Contact info
+  const contactEl = document.getElementById('detail-contact');
+  if(pin.owner_name || pin.phone){
+    contactEl.style.display='block';
+    let html = '';
+    if(pin.owner_name) html += `<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:4px">👤 ${pin.owner_name}</div>`;
+    if(pin.phone) html += `<a href="tel:${pin.phone}" class="call-btn">📞 ${pin.phone} <span style="font-size:12px;opacity:.7">Tap to call</span></a>`;
+    contactEl.innerHTML = html;
+  } else { contactEl.style.display='none'; }
+
+  // Follow-up date
+  const fuEl = document.getElementById('detail-followup');
+  if(pin.followup_date){
+    const today = new Date().toISOString().split('T')[0];
+    const fu = pin.followup_date;
+    let cls, label;
+    if(fu < today){ cls='due'; label='⚠️ Follow-up overdue: '+formatDate(fu); }
+    else if(fu === today){ cls='due'; label='🔴 Follow up TODAY: '+formatDate(fu); }
+    else { cls='upcoming'; label='📅 Follow up: '+formatDate(fu); }
+    fuEl.innerHTML = `<div class="followup-badge ${cls}">${label}</div>`;
+  } else { fuEl.innerHTML=''; }
+
+  document.getElementById('detail-bg').classList.add('open');
+}
+
+function followupBadge(dateStr){
+  if(!dateStr) return '';
+  const today = new Date().toISOString().split('T')[0];
+  if(dateStr < today) return `<div class="followup-badge due">⚠️ Overdue: ${formatDate(dateStr)}</div>`;
+  if(dateStr === today) return `<div class="followup-badge due">🔴 Follow up TODAY</div>`;
+  return `<div class="followup-badge upcoming">📅 ${formatDate(dateStr)}</div>`;
+}
+
+function formatDate(dateStr){
+  const d = new Date(dateStr+'T12:00:00');
+  return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+}
+
+function closeDetail(){
+  document.getElementById('detail-bg').classList.remove('open');
+  detailPinId=null;
+}
+document.getElementById('detail-close-btn').addEventListener('click', closeDetail);
+document.getElementById('detail-bg').addEventListener('click',e=>{
+  if(e.target===document.getElementById('detail-bg')) closeDetail();
+});
+
+document.getElementById('detail-edit-btn').addEventListener('click',()=>{
+  const pin=pins.find(p=>p.id===detailPinId);
+  if(!pin)return;
+  document.getElementById('detail-bg').classList.remove('open');
+  openSheet({lat:pin.lat,lng:pin.lng},pin);
+  detailPinId=null;
+});
+
+document.getElementById('detail-delete-btn').addEventListener('click',async()=>{
+  const pin=pins.find(p=>p.id===detailPinId);
+  if(!pin)return;
+  showConfirm('Delete this pin?', async ()=>{
+    try{
+      const pid=detailPinId;
+      await api.del('/api/pins/'+pid);
+      pins=pins.filter(p=>p.id!==pid);
+      renderAll();
+      if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
+      toast('Pin deleted');
+    }catch(e){toast('Could not delete',3000);}
+    document.getElementById('detail-bg').classList.remove('open');
+    detailPinId=null;
+  }, 'Delete');
+});
+
+// ── Tracking ──────────────────────────────────────────────────────
+document.getElementById('trackBtn').addEventListener('click',()=>tracking?stopT():startT());
+
+function startT(){
+  if(!('geolocation' in navigator)){toast('GPS not available');return;}
+  document.getElementById('trackBtn').textContent='Getting GPS…';
+  document.getElementById('trackBtn').disabled=true;
+  toast('Getting your location…',3000);
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const{latitude:lat,longitude:lng}=pos.coords;
+    const id=Date.now()+'';const color=sCol(sessions.length);
+    try{await api.post('/api/sessions',{id,color});}catch(e){}
+    curSession={id,color,coords:[],started_at:new Date().toISOString()};
+    curLine=L.polyline([],{color,weight:6,opacity:1}).addTo(map);
+    tracking=true;
+    document.getElementById('trackBtn').textContent='⏹ Stop Tracking';
+    document.getElementById('trackBtn').classList.add('stop');
+    document.getElementById('dot').classList.add('on');
+    document.getElementById('timer').classList.add('show');
+    document.getElementById('pinBtn').classList.add('show');
+    startTime=Date.now();timerInt=setInterval(tickTimer,1000);
+    map.setView([lat,lng],16);setYou(lat,lng);
+    watchId=navigator.geolocation.watchPosition(onPos,onPosErr,{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
+    followMode=true;
+    document.getElementById('trackBtn').disabled=false;
+    requestWakeLock();
+    document.body.classList.add('tracking');
+    toast('Tracking • tap 📍 to log a stop');
+  },err=>{
+    const m={1:'Location denied — Settings → Privacy → Location Services',2:'GPS unavailable',3:'GPS timed out'};
+    document.getElementById('trackBtn').textContent='▶ Start Tracking';
+    document.getElementById('trackBtn').disabled=false;
+    toast(m[err.code]||'GPS error',5000);
+  },{enableHighAccuracy:true,timeout:15000});
+}
+
+function onPos(pos){
+  const{latitude:lat,longitude:lng}=pos.coords;
+  setYou(lat,lng);
+  if(followMode) map.setView([lat,lng],map.getZoom(),{animate:true,duration:0.5});
+  if(!curSession)return;
+  const coord={lat,lng,ts:new Date().toISOString()};
+  curSession.coords.push(coord);curLine.addLatLng([lat,lng]);
+  coordBuffer.push(coord);if(coordBuffer.length>=15)flushCoords();
+}
+function onPosErr(err){toast({1:'Location denied',2:'GPS unavailable',3:'GPS timed out'}[err.code]||'GPS error',3000);}
+
+async function flushCoords(){
+  if(!curSession||!coordBuffer.length)return;
+  const batch=[...coordBuffer];coordBuffer=[];
+  if(!navigator.onLine){
+    // Offline — queue locally
+    queueCoordsOffline(curSession.id, batch);
+    return;
+  }
+  try{
+    await api.post(`/api/sessions/${curSession.id}/coords`,{coords:batch});
+  } catch(e){
+    // Failed — save to offline queue for later sync
+    queueCoordsOffline(curSession.id, batch);
+    console.warn('Coords queued offline:', batch.length);
+  }
+}
+
+async function stopT(){
+  if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
+  clearInterval(timerInt);timerInt=null;await flushCoords();
+  if(curSession){
+    try{await api.patch(`/api/sessions/${curSession.id}/end`);}catch(e){}
+    sessions.push({...curSession});if(curLine)allLines.push(curLine);
+    toast(`Route saved — ${curSession.coords.length} points`);
+    // Auto-snap route to roads in background
+    const savedId = curSession.id;
+    setTimeout(() => snapRouteBackground(savedId), 1000);
+  }
+  tracking=false;curSession=null;curLine=null;startTime=null;coordBuffer=[];
+  document.getElementById('trackBtn').textContent='▶ Start Tracking';
+  document.getElementById('trackBtn').classList.remove('stop');
+  document.getElementById('dot').classList.remove('on');
+  document.getElementById('timer').classList.remove('show');
+  document.getElementById('timer').textContent='';
+  document.getElementById('pinBtn').classList.remove('show');
+  document.body.classList.remove('tracking');
+  followMode=true; showFollowBtn(false);
+  releaseWakeLock();
+}
+
+function tickTimer(){
+  if(!startTime)return;
+  const s=Math.floor((Date.now()-startTime)/1000);
+  document.getElementById('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+
+
+// ── Settings Panel ────────────────────────────────────────────────
+document.getElementById('settingsBtn').addEventListener('click', ()=>{ hideFloatingUI(); openSettings(); });
+document.getElementById('settings-close').addEventListener('click', () => {
+  document.getElementById('settings-panel').classList.remove('open');
+});
+
+function openSettings() {
+  // Populate account info
+  if(currentUser){
+    document.getElementById('settings-name').textContent  = currentUser.name  || '—';
+    document.getElementById('settings-email').textContent = currentUser.email || '—';
+  }
+  // Populate stats
+  document.getElementById('settings-routes').textContent = sessions.length + (importedRoutes.length ? ` (+${importedRoutes.length} shared)` : '');
+  document.getElementById('settings-pins').textContent   = pins.length + (importedPins.length ? ` (+${importedPins.length} shared)` : '');
+  document.getElementById('settings-photos').textContent = pins.filter(p=>p.photo).length;
+  // Reset password form
+  closePwForm();
+  document.getElementById('settings-panel').classList.add('open');
+}
+
+// Password change
+document.getElementById('pw-toggle-btn').addEventListener('click', () => {
+  const form = document.getElementById('pw-form');
+  if(form.classList.contains('open')){
+    closePwForm();
+    document.getElementById('pw-toggle-btn').textContent = 'Change';
+  } else {
+    form.classList.add('open');
+    document.getElementById('pw-toggle-btn').textContent = 'Cancel';
+    document.getElementById('pw-current').focus();
+  }
+});
+
+function closePwForm(){
+  const form = document.getElementById('pw-form');
+  form.classList.remove('open');
+  document.getElementById('pw-current').value  = '';
+  document.getElementById('pw-new').value      = '';
+  document.getElementById('pw-confirm').value  = '';
+  document.getElementById('pw-error').classList.remove('show');
+  document.getElementById('pw-success').classList.remove('show');
+  document.getElementById('pw-toggle-btn').textContent = 'Change';
+}
+
+document.getElementById('pw-save-btn').addEventListener('click', async () => {
+  const current  = document.getElementById('pw-current').value;
+  const newPw    = document.getElementById('pw-new').value;
+  const confirm  = document.getElementById('pw-confirm').value;
+  const errEl    = document.getElementById('pw-error');
+  const okEl     = document.getElementById('pw-success');
+  errEl.classList.remove('show'); okEl.classList.remove('show');
+
+  if(!current || !newPw || !confirm){ errEl.textContent='Fill in all fields'; errEl.classList.add('show'); return; }
+  if(newPw.length < 6){ errEl.textContent='New password must be at least 6 characters'; errEl.classList.add('show'); return; }
+  if(newPw !== confirm){ errEl.textContent='New passwords do not match'; errEl.classList.add('show'); return; }
+
+  document.getElementById('pw-save-btn').textContent = 'Updating…';
+  try {
+    const res = await fetch('/api/auth/password', {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ currentPassword: current, newPassword: newPw })
+    });
+    const data = await res.json();
+    if(!res.ok){ errEl.textContent = data.error || 'Update failed'; errEl.classList.add('show'); }
+    else {
+      okEl.classList.add('show');
+      document.getElementById('pw-current').value = '';
+      document.getElementById('pw-new').value     = '';
+      document.getElementById('pw-confirm').value = '';
+      setTimeout(closePwForm, 2000);
+    }
+  } catch(e) { errEl.textContent='Network error'; errEl.classList.add('show'); }
+  document.getElementById('pw-save-btn').textContent = 'Update Password';
+});
+
+// Logout
+document.getElementById('settings-logout-row').addEventListener('click', () => {
+  showConfirm('Log out of CanvassTrack?', ()=>{
+  authToken = null; currentUser = null;
+  localStorage.removeItem('ct_token');
+  localStorage.removeItem('ct_user');
+  document.getElementById('settings-panel').classList.remove('open');
+  // Reset app state
+  sessions=[]; pins=[]; renderAll();
+  showAuthScreen();
+  }, 'Log Out');
+});
+
+
+// ── Session Sharing ───────────────────────────────────────────────
+const SHARED_COLORS = ['#00c9a7','#4a9eff','#a855f7','#ec4899','#22d3ee','#f97316'];
+
+async function loadImportedRoutes(){
+  try {
+    const data = await api.get('/api/coverage/shared');
+    importedRoutes = data.sessions || [];
+    importedPins   = data.pins    || [];
+  } catch(e){ importedRoutes=[]; importedPins=[]; }
+}
+
+// Share a specific session — called from history route card
+async function shareSession(sessionId){
+  try {
+    const res = await api.post(`/api/sessions/${sessionId}/share`, {});
+    if(res.error){ toast(res.error, 3000); return; }
+    // Show the code in a simple prompt-style modal
+    showShareCode(res.code);
+  } catch(e){ toast('Could not generate share code', 3000); }
+}
+
+function showShareCode(code){
+  // Reuse the sheet-bg overlay for the share code display
+  const bg = document.createElement('div');
+  bg.style.cssText = 'position:fixed;inset:0;z-index:600;background:rgba(0,0,0,.65);backdrop-filter:blur(5px);display:flex;align-items:flex-end';
+  bg.innerHTML = `
+    <div style="width:100%;background:#161616;border-radius:22px 22px 0 0;border-top:1px solid rgba(255,255,255,.08);padding:20px 20px 48px">
+      <div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 18px"></div>
+      <div style="font-size:17px;font-weight:800;margin-bottom:6px">📤 Share This Route</div>
+      <div style="font-size:13px;color:#555;margin-bottom:16px">Give this code to your partner — they'll enter it on their Coverage map</div>
+      <div class="share-code-display">
+        <div class="share-code-text">${code}</div>
+        <div class="share-code-hint">Share code — valid until route is deleted</div>
+      </div>
+      <button onclick="navigator.clipboard&&navigator.clipboard.writeText('${code}')" style="width:100%;padding:14px;background:#1c1c1c;border:1.5px solid #2c2c2c;border-radius:12px;color:#f5a623;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px">📋 Copy Code</button>
+      <button id="share-close-btn" style="width:100%;padding:14px;background:transparent;border:1px solid #222;border-radius:12px;color:#555;font-size:15px;cursor:pointer">Done</button>
+    </div>`;
+  document.body.appendChild(bg);
+  bg.querySelector('#share-close-btn').addEventListener('click', ()=>bg.remove());
+  bg.addEventListener('click', e=>{ if(e.target===bg) bg.remove(); });
+}
+
+// Coverage map + Add Route button
+document.getElementById('coverage-add-btn').addEventListener('click', ()=>{
+  const bg = document.createElement('div');
+  bg.style.cssText = 'position:fixed;inset:0;z-index:600;background:rgba(0,0,0,.65);backdrop-filter:blur(5px);display:flex;align-items:flex-end';
+  bg.innerHTML = `
+    <div style="width:100%;background:#161616;border-radius:22px 22px 0 0;border-top:1px solid rgba(255,255,255,.08);padding:20px 20px 48px">
+      <div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 18px"></div>
+      <div style="font-size:17px;font-weight:800;margin-bottom:6px">＋ Add a Route</div>
+      <div style="font-size:13px;color:#555;margin-bottom:16px">Enter the share code from your partner to add their route to your coverage map</div>
+      <input id="import-code-input" style="width:100%;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:26px;font-weight:900;letter-spacing:6px;text-align:center;text-transform:uppercase;padding:14px;outline:none;margin-bottom:12px" placeholder="XXXXXX" maxlength="6"/>
+      <div id="import-error" style="font-size:12px;color:#e03b3b;margin-bottom:10px;display:none"></div>
+      <button id="import-confirm-btn" style="width:100%;padding:15px;background:#f5a623;color:#000;border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;margin-bottom:10px">Add to My Coverage</button>
+      <button id="import-cancel-btn" style="width:100%;padding:14px;background:transparent;border:1px solid #222;border-radius:12px;color:#555;font-size:15px;cursor:pointer">Cancel</button>
+    </div>`;
+  document.body.appendChild(bg);
+
+  bg.querySelector('#import-cancel-btn').addEventListener('click',()=>bg.remove());
+  bg.addEventListener('click',e=>{ if(e.target===bg) bg.remove(); });
+  bg.querySelector('#import-confirm-btn').addEventListener('click', async ()=>{
+    const code = bg.querySelector('#import-code-input').value.trim().toUpperCase();
+    const errEl = bg.querySelector('#import-error');
+    errEl.style.display='none';
+    if(!code||code.length!==6){ errEl.textContent='Enter the 6-character code'; errEl.style.display='block'; return; }
+    bg.querySelector('#import-confirm-btn').textContent='Adding…';
+    try {
+      const res = await api.post('/api/coverage/import', { code });
+      if(res.error){ errEl.textContent=res.error; errEl.style.display='block'; bg.querySelector('#import-confirm-btn').textContent='Add to My Coverage'; return; }
+      toast(`Route from ${res.owner_name} added — check Routes & Touch Points tabs`);
+      await load(); // reload everything including shared data
+      initCoverageMap();
+      bg.remove();
+    } catch(e){ errEl.textContent='Network error'; errEl.style.display='block'; bg.querySelector('#import-confirm-btn').textContent='Add to My Coverage'; }
+  });
+
+  setTimeout(()=>bg.querySelector('#import-code-input').focus(), 100);
+});
+
+
+
+// ── Forgot password ────────────────────────────────────────────────
+document.getElementById('forgot-link').addEventListener('click',()=>{
+  document.getElementById('forgot-bg').style.display='flex';
+  document.getElementById('forgot-error').style.display='none';
+  document.getElementById('forgot-success').style.display='none';
+  document.getElementById('forgot-email').value='';
+});
+document.getElementById('forgot-close').addEventListener('click',()=>{
+  document.getElementById('forgot-bg').style.display='none';
+});
+document.getElementById('forgot-submit').addEventListener('click', async ()=>{
+  const email = document.getElementById('forgot-email').value.trim();
+  const errEl = document.getElementById('forgot-error');
+  const okEl  = document.getElementById('forgot-success');
+  errEl.style.display='none'; okEl.style.display='none';
+  if(!email){ errEl.textContent='Enter your email'; errEl.style.display='block'; return; }
+  document.getElementById('forgot-submit').textContent='Sending…';
+  try{
+    const res = await fetch('/api/auth/forgot', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email})
+    });
+    const data = await res.json();
+    if(!res.ok){ errEl.textContent=data.error||'Error'; errEl.style.display='block'; }
+    else { okEl.textContent='If that email exists, a reset code has been sent. Check with your admin.'; okEl.style.display='block'; }
+  }catch(e){ errEl.textContent='Network error'; errEl.style.display='block'; }
+  document.getElementById('forgot-submit').textContent='Send Reset Code';
+});
+
+
+
+// ── Storm Overlay ─────────────────────────────────────────────────
+let stormMarkers = [], stormDays = 365, stormVisible = false;
+let activeStormTypes = new Set(['hail','wind','tornado']);
+
+document.getElementById('stormBtn').addEventListener('click', () => {
+  if(stormVisible){ hideStorm(); return; }
+  document.getElementById('storm-bar').classList.add('show');
+  stormVisible = true;
+  loadStorm();
+});
+
+document.getElementById('storm-close-btn').addEventListener('click', hideStorm);
+
+function hideStorm(){
+  stormVisible = false;
+  document.getElementById('storm-bar').classList.remove('show');
+  document.getElementById('storm-legend').classList.remove('show');
+  stormMarkers.forEach(m => map.removeLayer(m));
+  stormMarkers = [];
+}
+
+// Type toggles
+document.querySelectorAll('.storm-type-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const t = btn.dataset.stype;
+    if(activeStormTypes.has(t)){ activeStormTypes.delete(t); btn.classList.remove('active'); }
+    else { activeStormTypes.add(t); btn.classList.add('active'); }
+    if(stormVisible) loadStorm();
+  });
+});
+
+// Day range
+document.querySelectorAll('.storm-days-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.storm-days-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    stormDays = parseInt(btn.dataset.days);
+    if(stormVisible) loadStorm();
+  });
+});
+
+async function loadStorm(){
+  const loadEl = document.getElementById('storm-loading');
+  loadEl.style.display = 'block';
+  stormMarkers.forEach(m => map.removeLayer(m));
+  stormMarkers = [];
+  try{
+    const events = await api.get('/api/storm/events?days=' + stormDays);
+    loadEl.style.display = 'none';
+    if(!events || events.error){ toast('Could not load storm data', 3000); return; }
+
+    const today = new Date();
+    let counts = { hail:0, wind:0, tornado:0 };
+
+    events.forEach(ev => {
+      if(!activeStormTypes.has(ev.type)) return;
+      counts[ev.type] = (counts[ev.type]||0) + 1;
+
+      const ageDays = (today - new Date(ev.date)) / 86400000;
+      const opacity = Math.max(0.2, 1 - ageDays / (stormDays * 1.2));
+      let marker;
+
+      if(ev.type === 'hail'){
+        let color, radius;
+        if(ev.mag >= 2.0)     { color='#e03b3b'; radius=16; }
+        else if(ev.mag >= 1.5){ color='#f5a623'; radius=11; }
+        else                  { color='#f5e623'; radius=7; }
+        marker = L.circleMarker([ev.lat, ev.lng], {
+          radius, color, fillColor:color,
+          fillOpacity: opacity*.65, opacity, weight:1.5
+        }).bindPopup(`
+          <div style="min-width:160px">
+            <div style="font-weight:800;font-size:14px;margin-bottom:3px">⛈️ ${ev.mag}" Hail</div>
+            <div style="color:#aaa;font-size:12px">${ev.location}${ev.county?', '+ev.county:''}, ${ev.state}</div>
+            <div style="color:#f5a623;font-size:12px;margin-top:4px">${formatDate(ev.date)}</div>
+          </div>`);
+
+      } else if(ev.type === 'wind'){
+        const color = ev.mag >= 65 ? '#0066ff' : '#4a9eff';
+        const mph = Math.round(ev.mag); // IEM reports wind in mph already
+        // Diamond shape using rotated square divIcon
+        const iconHtml = `<div style="width:12px;height:12px;background:${color};transform:rotate(45deg);opacity:${opacity};border:1.5px solid rgba(255,255,255,.4)"></div>`;
+        marker = L.marker([ev.lat, ev.lng], {
+          icon: L.divIcon({ html:iconHtml, iconSize:[12,12], iconAnchor:[6,6], className:'' })
+        }).bindPopup(`
+          <div style="min-width:160px">
+            <div style="font-weight:800;font-size:14px;margin-bottom:3px">💨 ${mph}mph Wind</div>
+            <div style="color:#aaa;font-size:12px">${ev.location}${ev.county?', '+ev.county:''}, ${ev.state}</div>
+            <div style="color:#4a9eff;font-size:12px;margin-top:4px">${formatDate(ev.date)}</div>
+          </div>`);
+
+      } else if(ev.type === 'tornado'){
+        const ef = ev.mag;
+        let color;
+        if(ef >= 4)      color='#7c3aed';
+        else if(ef >= 2) color='#a855f7';
+        else             color='#d4a0ff';
+        const label = ef === 0 ? 'EF0' : `EF${ef}`;
+        // Triangle using CSS borders
+        const iconHtml = `<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid ${color};opacity:${Math.max(opacity,.4)};filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))"></div>`;
+        marker = L.marker([ev.lat, ev.lng], {
+          icon: L.divIcon({ html:iconHtml, iconSize:[16,14], iconAnchor:[8,14], className:'' })
+        }).bindPopup(`
+          <div style="min-width:160px">
+            <div style="font-weight:800;font-size:14px;margin-bottom:3px">🌪️ ${label} Tornado</div>
+            <div style="color:#aaa;font-size:12px">${ev.location}${ev.county?', '+ev.county:''}, ${ev.state}</div>
+            <div style="color:#a855f7;font-size:12px;margin-top:4px">${formatDate(ev.date)}</div>
+          </div>`);
+      }
+
+      if(marker){ marker.addTo(map); stormMarkers.push(marker); }
+    });
+
+    document.getElementById('storm-legend').classList.add('show');
+    const parts = [];
+    if(counts.hail)    parts.push(`${counts.hail} hail`);
+    if(counts.wind)    parts.push(`${counts.wind} wind`);
+    if(counts.tornado) parts.push(`${counts.tornado} tornado`);
+    toast(parts.length ? parts.join(' · ') + ` events (${stormDays}d)` : `No events in last ${stormDays} days`, 3000);
+
+  } catch(e){ loadEl.style.display='none'; toast('Storm data unavailable', 3000); }
+}
+
+
+
+// ── Stats Screen ─────────────────────────────────────────────────
+let statsData = null, statsPeriod = 'today';
+
+document.getElementById('open-stats-row').addEventListener('click', async () => {
+  hideFloatingUI();
+  document.getElementById('settings-panel').classList.remove('open');
+  document.getElementById('stats-screen').classList.add('open');
+  await loadStats();
+  renderStats();
+});
+
+document.getElementById('stats-close').addEventListener('click', () => {
+  document.getElementById('stats-screen').classList.remove('open');
+});
+
+document.querySelectorAll('.stats-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.stats-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    statsPeriod = tab.dataset.period;
+    renderStats();
+  });
+});
+
+async function loadStats() {
+  try {
+    statsData = await api.get('/api/stats');
+  } catch(e) { statsData = null; }
+}
+
+// ── Chart type state ──────────────────────────────────────────────
+let statsChartType = 'daily';
+
+document.querySelectorAll('.stats-chart-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.stats-chart-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    statsChartType = btn.dataset.chart;
+    renderStats();
+  });
+});
+
+function renderStats() {
+  const cardsEl = document.getElementById('stats-cards');
+  const bottomEl = document.getElementById('stats-bottom');
+  if(!statsData) {
+    cardsEl.innerHTML = '<div style="text-align:center;padding:40px;color:#e03b3b;grid-column:1/-1">Could not load stats</div>';
+    return;
+  }
+
+  const p = statsData[statsPeriod] || {};
+  const statuses = p.statuses || {};
+  const totalPins = p.pins || 0;
+  const fu = statsData.followUps || {};
+
+  // ── Summary cards ──────────────────────────────────────────────
+  const convRate = p.convRate || 0;
+  const convColor = convRate >= 20 ? '#00c9a7' : convRate >= 10 ? '#f5a623' : '#fff';
+
+  cardsEl.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-card-val">${totalPins}</div>
+      <div class="stat-card-lbl">Touch Points</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card-val" style="color:${convColor}">${convRate}%</div>
+      <div class="stat-card-lbl">Conv. Rate</div>
+      <div class="stat-card-sub">Int + Appt</div>
+    </div>
+    ${p.routes !== undefined ? `<div class="stat-card">
+      <div class="stat-card-val">${p.routes}</div>
+      <div class="stat-card-lbl">Routes</div>
+    </div>` : ''}
+    ${statsData.allTime?.bestDay && statsPeriod === 'allTime' ? `<div class="stat-card">
+      <div class="stat-card-val" style="font-size:16px">${statsData.allTime.bestDay.count}</div>
+      <div class="stat-card-lbl">Best Day</div>
+      <div class="stat-card-sub">${formatDate(statsData.allTime.bestDay.date)}</div>
+    </div>` : ''}
+  `;
+
+  // ── Chart ──────────────────────────────────────────────────────
+  drawStatsChart();
+
+  // ── Follow-ups + status breakdown ─────────────────────────────
+  const statusColors = {
+    'Appointment':'#a855f7', 'Interested':'#00c9a7',
+    'Spoke to Owner':'#4a9eff', 'Dropped Lit':'#f5a623', 'No Answer':'#555'
+  };
+  const statusBars = ['Appointment','Interested','Spoke to Owner','Dropped Lit','No Answer'].map(s => {
+    const count = statuses[s] || 0;
+    const pct = totalPins > 0 ? Math.round((count/totalPins)*100) : 0;
+    const color = statusColors[s] || '#444';
+    return `<div class="status-bar-row">
+      <div class="status-bar-label">
+        <span style="color:${color};font-weight:700">${s}</span>
+        <span style="color:#555">${count} (${pct}%)</span>
+      </div>
+      <div class="status-bar-track">
+        <div class="status-bar-fill" style="width:${pct}%;background:${color}"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  bottomEl.innerHTML = `
+    <div class="stats-section-label">Status Breakdown</div>
+    <div style="background:#161616;border:1px solid #222;border-radius:14px;padding:14px;margin-bottom:16px">
+      ${totalPins > 0 ? statusBars : '<div style="color:#333;font-size:13px;text-align:center;padding:12px">No pins this period</div>'}
+    </div>
+    <div class="stats-section-label">Follow-Ups</div>
+    <div style="background:#161616;border:1px solid #222;border-radius:14px;padding:4px 14px;margin-bottom:60px">
+      <div class="followup-row"><span style="color:#e03b3b;font-weight:700">⚠️ Overdue</span><span style="color:#e03b3b;font-weight:800">${fu.overdue||0}</span></div>
+      <div class="followup-row"><span style="color:#f5a623;font-weight:700">🔴 Due Today</span><span style="color:#f5a623;font-weight:800">${fu.dueToday||0}</span></div>
+      <div class="followup-row"><span style="color:#555">📅 Upcoming</span><span style="color:#555;font-weight:800">${fu.upcoming||0}</span></div>
+    </div>
+  `;
+}
+
+// ── Canvas chart renderer ──────────────────────────────────────────
+function drawStatsChart() {
+  const canvas = document.getElementById('stats-canvas');
+  const wrap   = document.getElementById('stats-chart-wrap');
+  if(!canvas || !statsData) return;
+
+  const W = wrap.clientWidth - 32;
+  const H = 160;
+  canvas.width  = W * (window.devicePixelRatio || 1);
+  canvas.height = H * (window.devicePixelRatio || 1);
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  ctx.clearRect(0, 0, W, H);
+
+  if(statsChartType === 'funnel') {
+    drawFunnelChart(ctx, W, H);
+    return;
+  }
+
+  // Daily or weekly bar chart
+  const data = statsChartType === 'weekly'
+    ? (statsData.weekly || [])
+    : (statsData.daily || []);
+
+  if(!data.length) return;
+
+  // Filter to relevant window based on period
+  let chartData = data;
+  if(statsChartType === 'daily') {
+    const days = statsPeriod === 'today' ? 7 : statsPeriod === 'week' ? 14 : statsPeriod === 'month' ? 30 : 90;
+    chartData = data.slice(-days);
+  } else {
+    chartData = data.slice(-12);
+  }
+
+  const maxPins = Math.max(...chartData.map(d => d.pins), 1);
+  const barCount = chartData.length;
+  const gap = 2;
+  const barW = Math.max(4, Math.floor((W - gap * (barCount - 1)) / barCount));
+  const padTop = 20, padBottom = 24;
+  const chartH = H - padTop - padBottom;
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Grid lines
+  ctx.strokeStyle = '#1c1c1c';
+  ctx.lineWidth = 1;
+  for(let i = 0; i <= 4; i++) {
+    const y = padTop + (chartH * i / 4);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Bars
+  chartData.forEach((d, i) => {
+    const x = i * (barW + gap);
+    const isToday = d.date === todayStr || (statsChartType === 'weekly' && d.week === todayStr.slice(0,7));
+
+    // Total pins bar (background)
+    const totalH = Math.max(2, (d.pins / maxPins) * chartH);
+    ctx.fillStyle = isToday ? '#f5a62333' : '#2a2a2a';
+    ctx.fillRect(x, padTop + chartH - totalH, barW, totalH);
+
+    // Interested bar (stacked on top)
+    if(d.interested > 0) {
+      const intH = (d.interested / maxPins) * chartH;
+      ctx.fillStyle = '#00c9a7';
+      ctx.fillRect(x, padTop + chartH - intH, barW, intH);
+    }
+
+    // Appointments bar
+    if(d.appointments > 0) {
+      const aptH = (d.appointments / maxPins) * chartH;
+      ctx.fillStyle = '#a855f7';
+      ctx.fillRect(x, padTop + chartH - aptH, barW, aptH);
+    }
+
+    // Value label on tallest bars
+    if(d.pins > 0 && barW >= 12) {
+      ctx.fillStyle = isToday ? '#f5a623' : '#444';
+      ctx.font = '9px -apple-system,sans-serif';
+      ctx.textAlign = 'center';
+      const totalBarH = (d.pins / maxPins) * chartH;
+      ctx.fillText(d.pins, x + barW/2, padTop + chartH - totalBarH - 3);
+    }
+  });
+
+  // X-axis labels — show every Nth bar
+  const labelEvery = chartData.length <= 14 ? 1 : chartData.length <= 30 ? 5 : 10;
+  ctx.fillStyle = '#333';
+  ctx.font = '9px -apple-system,sans-serif';
+  ctx.textAlign = 'center';
+  chartData.forEach((d, i) => {
+    if(i % labelEvery !== 0 && i !== chartData.length - 1) return;
+    const x = i * (barW + gap) + barW/2;
+    const label = statsChartType === 'weekly'
+      ? ('W' + (i+1))
+      : (d.date||'').slice(5).replace('-','/');
+    ctx.fillText(label, x, H - 6);
+  });
+
+  // Legend
+  ctx.font = '10px -apple-system,sans-serif';
+  ctx.textAlign = 'left';
+  [['#2a2a2a','Doors'],['#00c9a7','Interested'],['#a855f7','Appt']].forEach(([col,lbl], i) => {
+    ctx.fillStyle = col; ctx.fillRect(i * 80, 6, 10, 10);
+    ctx.fillStyle = '#555'; ctx.fillText(lbl, i * 80 + 14, 15);
+  });
+}
+
+function drawFunnelChart(ctx, W, H) {
+  // Funnel: All Pins → Spoke → Interested → Appointment
+  const statuses = statsData[statsPeriod]?.statuses || {};
+  const total = statsData[statsPeriod]?.pins || 0;
+  if(!total) {
+    ctx.fillStyle = '#333'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('No data for this period', W/2, H/2);
+    return;
+  }
+
+  const stages = [
+    { label: 'Doors Knocked', val: total, color: '#2a2a2a' },
+    { label: 'Spoke to Owner', val: (statuses['Spoke to Owner']||0) + (statuses['Interested']||0) + (statuses['Appointment']||0), color: '#4a9eff' },
+    { label: 'Interested', val: (statuses['Interested']||0) + (statuses['Appointment']||0), color: '#00c9a7' },
+    { label: 'Appointment', val: statuses['Appointment']||0, color: '#a855f7' },
+  ];
+
+  const barH = 28, gap = 10;
+  const totalH = stages.length * (barH + gap);
+  const startY = (H - totalH) / 2;
+
+  stages.forEach((stage, i) => {
+    const pct = total > 0 ? stage.val / total : 0;
+    const barW = Math.max(pct * (W - 120), stage.val > 0 ? 4 : 0);
+    const y = startY + i * (barH + gap);
+
+    // Bar
+    ctx.fillStyle = stage.color;
+    const radius = 4;
+    ctx.beginPath();
+    ctx.roundRect(0, y, barW, barH, radius);
+    ctx.fill();
+
+    // Label
+    ctx.fillStyle = '#888';
+    ctx.font = '11px -apple-system,sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(stage.label, barW + 8, y + 11);
+    ctx.fillStyle = '#fff';
+    ctx.font = '800 12px -apple-system,sans-serif';
+    ctx.fillText(stage.val + (total > 0 ? ' (' + Math.round(pct*100) + '%)' : ''), barW + 8, y + 24);
+  });
+}
+
+  const statuses = p.statuses || {};
+  const totalPins = p.pins || 0;
+  const fu = statsData.followUps || {};
+
+  // ── Summary cards ──
+  let routeCard = statsPeriod === 'month' || statsPeriod === 'allTime'
+    ? '' // no routes for month/allTime period
+    : `<div class="stat-card">
+        <div class="stat-card-val">${p.routes || 0}</div>
+        <div class="stat-card-lbl">Routes</div>
+      </div>`;
+
+  const convCard = `<div class="stat-card">
+    <div class="stat-card-val" style="color:${(p.convRate||0)>=20?'#00c9a7':'#fff'}">${p.convRate || 0}%</div>
+    <div class="stat-card-lbl">Conv. Rate</div>
+    <div class="stat-card-sub">Interested + Appt</div>
+  </div>`;
+
+  const bestDayHtml = statsData.allTime?.bestDay && statsPeriod === 'allTime'
+    ? `<div class="stat-card" style="grid-column:1/-1">
+        <div class="stat-card-val" style="font-size:18px">${formatDate(statsData.allTime.bestDay.date)}</div>
+        <div class="stat-card-lbl">Best Day</div>
+        <div class="stat-card-sub">${statsData.allTime.bestDay.count} pins</div>
+      </div>` : '';
+
+  // ── Status bars ──
+  const statusColors = {'Dropped Lit':'#f5a623','No Answer':'#555','Spoke to Owner':'#4a9eff','Interested':'#00c9a7','Appointment':'#a855f7'};
+  const statusBars = ['Appointment','Interested','Spoke to Owner','Dropped Lit','No Answer'].map(s => {
+    const count = statuses[s] || 0;
+    const pct = totalPins > 0 ? Math.round((count/totalPins)*100) : 0;
+    const color = statusColors[s] || '#444';
+    return `<div class="status-bar-row">
+      <div class="status-bar-label">
+        <span style="color:${color};font-weight:700">${s}</span>
+        <span style="color:#555">${count} (${pct}%)</span>
+      </div>
+      <div class="status-bar-track">
+        <div class="status-bar-fill" style="width:${pct}%;background:${color}"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // ── 30-day chart ──
+// ── Storms Tab ────────────────────────────────────────────────────
+let stormsMap = null, stormsMapInit = false;
+let stormTabDays = 365, stormTabTypes = new Set(['hail','wind','tornado']);
+let allStormEvents = null, stormEventsLoading = false;
+
+// Type toggle buttons in storms tab
+document.querySelectorAll('.storm-tab-type').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const t = btn.dataset.stt;
+    if(stormTabTypes.has(t)){ stormTabTypes.delete(t); btn.classList.remove('active'); }
+    else { stormTabTypes.add(t); btn.classList.add('active'); }
+    renderStormsTab();
+  });
+});
+
+// Day range buttons in storms tab
+document.querySelectorAll('.storm-tab-days').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.storm-tab-days').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    stormTabDays = parseInt(btn.dataset.std);
+    allStormEvents = null; // force reload
+    renderStormsTab();
+  });
+});
+
+async function loadStormEvents() {
+  if(allStormEvents !== null) return allStormEvents;
+  if(stormEventsLoading) return null;
+  stormEventsLoading = true;
+  try {
+    const events = await api.get('/api/storm/events?days=' + stormTabDays);
+    allStormEvents = events || [];
+    stormEventsLoading = false;
+    return allStormEvents;
   } catch(e) {
-    console.warn(`SPC fetch failed ${year}/${type}:`, e.message);
+    stormEventsLoading = false;
     return [];
   }
 }
 
-async function loadSPCData() {
-  const currentYear = new Date().getFullYear();
-  const years = [currentYear, currentYear - 1, currentYear - 2];
-  const types = ['hail', 'wind', 'torn'];
-  const allResults = [];
-  for (const year of years) {
-    for (const type of types) {
-      const events = await fetchSPCcsv(year, type);
-      allResults.push(...events);
-    }
-  }
-  // Deduplicate
-  const seen = new Set();
-  const deduped = allResults.filter(e => {
-    const key = `${e.type}|${e.lat.toFixed(2)}|${e.lng.toFixed(2)}|${e.date}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  console.log(`SPC total: ${deduped.length} unique events in MD/VA/PA/DE/WV`);
-  return deduped;
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLng = (lng2-lng1) * Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-app.get('/api/storm/events', requireAuth, async (req, res) => {
-  try {
-    const days = Math.min(parseInt(req.query.days) || 30, 365); // 1 year max — claim filing limit
-    if (!stormCache.data || (Date.now() - stormCache.fetchedAt) > STORM_TTL) {
-      console.log('Loading SPC storm data...');
-      stormCache.data = await loadSPCData();
-      stormCache.fetchedAt = Date.now();
-    }
-    const cutoff = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
-    res.json(stormCache.data.filter(e => e.date >= cutoff));
-  } catch(e) {
-    console.error('Storm events error:', e.message);
-    res.status(500).json({ error: e.message });
+function milesFromKm(km) { return km * 0.621371; }
+
+async function renderStormsTab() {
+  const wrap = document.getElementById('storms-wrap');
+  const meta = document.getElementById('storms-meta');
+  const list = document.getElementById('storms-list');
+  if(!wrap) return;
+
+  // Init storms map
+  const mapDiv = document.getElementById('storms-map');
+  if(!stormsMapInit && mapDiv) {
+    // Size the map
+    const panelH = document.getElementById('hist-panel').offsetHeight;
+    const headerH = document.getElementById('hist-header').offsetHeight;
+    const tabsH   = document.getElementById('hist-tabs').offsetHeight;
+    const ctrlH   = 80; // controls row + meta row
+    mapDiv.style.height = Math.floor((panelH - headerH - tabsH - ctrlH) * 0.42) + 'px';
+    stormsMap = L.map('storms-map', { zoomControl: true, attributionControl: false });
+    addSatTiles(stormsMap);
+    stormsMapInit = true;
   }
+  setTimeout(() => { if(stormsMap) stormsMap.invalidateSize(); }, 100);
+
+  meta.textContent = 'Loading storm data…';
+  list.innerHTML = '';
+
+  const events = await loadStormEvents();
+  if(!events) { meta.textContent = 'Could not load storm data'; return; }
+
+  // Get user position for distance sorting
+  const userPos = youMarker ? youMarker.getLatLng() : null;
+
+  // Filter by type and days
+  const cutoff = new Date(Date.now() - stormTabDays * 86400000).toISOString().split('T')[0];
+  let filtered = events.filter(e =>
+    stormTabTypes.has(e.type) && e.date >= cutoff
+  );
+
+  // Add distance if we have position, sort by distance
+  if(userPos) {
+    filtered = filtered.map(e => ({
+      ...e,
+      distKm: haversineKm(userPos.lat, userPos.lng, e.lat, e.lng)
+    })).sort((a,b) => a.distKm - b.distKm);
+  } else {
+    // Sort by date descending if no position
+    filtered.sort((a,b) => b.date.localeCompare(a.date));
+  }
+
+  // Update meta
+  const nearCount = userPos ? filtered.filter(e => e.distKm < 80).length : filtered.length;
+  meta.textContent = `${filtered.length} events · ${nearCount} within 50mi · ${stormTabDays}d window`;
+
+  // Draw on storms map
+  stormsMap.eachLayer(l => { if(l instanceof L.CircleMarker || l instanceof L.Marker) stormsMap.removeLayer(l); });
+  const allCoords = [];
+  const today = new Date();
+  filtered.forEach(ev => {
+    const ageDays = (today - new Date(ev.date)) / 86400000;
+    const opacity = Math.max(0.2, 1 - ageDays / (stormTabDays * 1.2));
+    let marker;
+    if(ev.type === 'hail') {
+      let color = ev.mag >= 2.0 ? '#e03b3b' : ev.mag >= 1.5 ? '#f5a623' : '#f5e623';
+      let radius = ev.mag >= 2.0 ? 14 : ev.mag >= 1.5 ? 10 : 7;
+      marker = L.circleMarker([ev.lat, ev.lng], { radius, color, fillColor:color, fillOpacity:opacity*.6, opacity, weight:1.5 });
+    } else if(ev.type === 'wind') {
+      const color = ev.mag >= 75 ? '#0066ff' : '#4a9eff';
+      marker = L.marker([ev.lat, ev.lng], { icon: L.divIcon({ html:`<div style="width:10px;height:10px;background:${color};transform:rotate(45deg);opacity:${opacity};border:1px solid rgba(255,255,255,.4)"></div>`, iconSize:[10,10], iconAnchor:[5,5], className:'' }) });
+    } else {
+      const color = ev.mag >= 4 ? '#7c3aed' : ev.mag >= 2 ? '#a855f7' : '#d4a0ff';
+      marker = L.marker([ev.lat, ev.lng], { icon: L.divIcon({ html:`<div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:13px solid ${color};opacity:${Math.max(opacity,.4)}"></div>`, iconSize:[14,13], iconAnchor:[7,13], className:'' }) });
+    }
+    if(marker) { marker.addTo(stormsMap); allCoords.push([ev.lat, ev.lng]); }
+  });
+
+  // Show user position on storm map
+  if(userPos) {
+    L.marker([userPos.lat, userPos.lng], {
+      icon: L.divIcon({ html:'<div class="you-ring"></div>', iconSize:[16,16], iconAnchor:[8,8], className:'' }),
+      zIndexOffset: 9999
+    }).addTo(stormsMap);
+    // Center on user
+    if(allCoords.length > 0) {
+      // Find events within 100mi and fit to those
+      const nearby = filtered.filter(e => e.distKm && e.distKm < 160);
+      if(nearby.length > 0) {
+        const nearCoords = nearby.map(e => [e.lat, e.lng]);
+        nearCoords.push([userPos.lat, userPos.lng]);
+        stormsMap.fitBounds(L.latLngBounds(nearCoords), { padding:[20,20] });
+      } else {
+        stormsMap.setView([userPos.lat, userPos.lng], 7);
+      }
+    } else {
+      stormsMap.setView([userPos.lat, userPos.lng], 8);
+    }
+  } else if(allCoords.length > 0) {
+    stormsMap.fitBounds(L.latLngBounds(allCoords), { padding:[20,20] });
+  }
+
+  // Build list — show nearest first
+  if(!filtered.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">🌤️</div><div class="empty-text">No storm events found<br>in this time range.</div></div>';
+    return;
+  }
+
+  // Show nearby first with a divider, then further away
+  const nearby50 = filtered.filter(e => !e.distKm || e.distKm < 80);
+  const farther  = filtered.filter(e => e.distKm && e.distKm >= 80);
+
+  function makeEventCard(ev) {
+    const card = document.createElement('div');
+    card.className = 'storm-event-card';
+    let icon, sizeLabel, color;
+    if(ev.type === 'hail') {
+      icon = '⛈️';
+      const sizeNames = ev.mag >= 2.75 ? 'baseball' : ev.mag >= 1.75 ? 'golf ball' : ev.mag >= 1.5 ? 'ping pong' : ev.mag >= 1.0 ? 'quarter' : 'penny';
+      sizeLabel = ev.mag + '" — ' + sizeNames;
+      color = ev.mag >= 2.0 ? '#e03b3b' : ev.mag >= 1.5 ? '#f5a623' : '#f5e623';
+    } else if(ev.type === 'wind') {
+      icon = '💨';
+      sizeLabel = ev.mag + 'mph wind';
+      color = ev.mag >= 75 ? '#0066ff' : '#4a9eff';
+    } else {
+      icon = '🌪️';
+      sizeLabel = 'EF' + (ev.mag || '0') + ' Tornado';
+      color = '#a855f7';
+    }
+    const distStr = ev.distKm ? Math.round(milesFromKm(ev.distKm)) + ' mi away' : '';
+    card.innerHTML = `
+      <div class="storm-event-icon">${icon}</div>
+      <div class="storm-event-info">
+        <div class="storm-event-size" style="color:${color}">${sizeLabel}</div>
+        <div class="storm-event-loc">${ev.location}${ev.county ? ', ' + ev.county : ''}, ${ev.state}</div>
+        <div class="storm-event-date">${formatDate(ev.date)}</div>
+      </div>
+      ${distStr ? `<div class="storm-event-dist" style="color:#555">${distStr}</div>` : ''}
+    `;
+    card.addEventListener('click', () => {
+      if(stormsMap) stormsMap.setView([ev.lat, ev.lng], 12);
+      document.getElementById('storms-list').scrollIntoView({ behavior:'smooth' });
+    });
+    return card;
+  }
+
+  if(nearby50.length > 0) {
+    if(userPos) {
+      const hdr = document.createElement('div');
+      hdr.style.cssText = 'font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#e03b3b;margin-bottom:8px';
+      hdr.textContent = '📍 Near You (' + nearby50.length + ')';
+      list.appendChild(hdr);
+    }
+    nearby50.forEach(ev => list.appendChild(makeEventCard(ev)));
+  }
+
+  if(farther.length > 0 && userPos) {
+    const hdr2 = document.createElement('div');
+    hdr2.style.cssText = 'font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#333;margin:14px 0 8px';
+    hdr2.textContent = 'Further Away (' + farther.length + ')';
+    list.appendChild(hdr2);
+    farther.slice(0, 50).forEach(ev => list.appendChild(makeEventCard(ev))); // cap at 50
+    if(farther.length > 50) {
+      const more = document.createElement('div');
+      more.style.cssText = 'text-align:center;font-size:12px;color:#333;padding:12px';
+      more.textContent = (farther.length - 50) + ' more events not shown';
+      list.appendChild(more);
+    }
+  }
+}
+
+
+
+
+
+// ── Sheet More Details toggle ────────────────────────────────────
+document.getElementById('sheet-more-btn').addEventListener('click', () => {
+  const details = document.getElementById('sheet-details');
+  const icon = document.getElementById('sheet-more-icon');
+  const open = details.style.display === 'block';
+  details.style.display = open ? 'none' : 'block';
+  icon.textContent = open ? '▼' : '▲';
+  document.getElementById('sheet-more-btn').style.color = open ? '#555' : '#f5a623';
 });
 
-// Debug endpoint
-app.get('/api/storm/debug', requireAuth, async (req, res) => {
-  res.json({
-    cached: !!stormCache.data,
-    cachedAt: stormCache.fetchedAt ? new Date(stormCache.fetchedAt).toISOString() : null,
-    totalEvents: stormCache.data?.length || 0,
-    targetStates: [...TARGET_STATES],
+// Auto-expand details when editing a pin that has details filled
+function autoExpandDetails(pin) {
+  if(pin && (pin.owner_name || pin.phone || pin.followup_date || pin.horizon_shingle)) {
+    document.getElementById('sheet-details').style.display = 'block';
+    document.getElementById('sheet-more-icon').textContent = '▲';
+    document.getElementById('sheet-more-btn').style.color = '#f5a623';
+  } else {
+    document.getElementById('sheet-details').style.display = 'none';
+    document.getElementById('sheet-more-icon').textContent = '▼';
+    document.getElementById('sheet-more-btn').style.color = '#555';
+  }
+}
+
+// ── Horizon Shingle Toggle ────────────────────────────────────────
+let horizonShingle = false;
+
+document.getElementById('horizon-toggle').addEventListener('click', () => {
+  horizonShingle = !horizonShingle;
+  document.getElementById('horizon-toggle').classList.toggle('active', horizonShingle);
+});
+
+function setHorizon(val) {
+  horizonShingle = !!val;
+  document.getElementById('horizon-toggle').classList.toggle('active', horizonShingle);
+}
+
+// ── Damage Photos ─────────────────────────────────────────────────
+let sheetDamagePhotos = []; // pending new photos in current sheet session
+let detailDamagePhotos = []; // loaded photos for current detail view
+
+// Photo viewer
+document.getElementById('photo-viewer-close').addEventListener('click', () => {
+  document.getElementById('photo-viewer').classList.remove('open');
+});
+document.getElementById('photo-viewer').addEventListener('click', e => {
+  if(e.target === document.getElementById('photo-viewer')) {
+    document.getElementById('photo-viewer').classList.remove('open');
+  }
+});
+function openPhotoViewer(src) {
+  document.getElementById('photo-viewer-img').src = src;
+  document.getElementById('photo-viewer').classList.add('open');
+}
+
+// Handle damage photo input in sheet
+document.getElementById('damage-photo-input').addEventListener('change', function() {
+  const files = Array.from(this.files);
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX = 1200; let w = img.width, h = img.height;
+        if(w > MAX){ h = Math.round(h*MAX/w); w = MAX; }
+        if(h > 1200){ w = Math.round(w*1200/h); h = 1200; }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+        sheetDamagePhotos.push(dataUrl);
+        renderSheetDamageGallery();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+  this.value = '';
+});
+
+function renderSheetDamageGallery() {
+  const gallery = document.getElementById('sheet-damage-gallery');
+  // Keep the add button, rebuild thumbs before it
+  gallery.innerHTML = '';
+  sheetDamagePhotos.forEach((photo, i) => {
+    const wrap = document.createElement('div'); wrap.className = 'damage-thumb-wrap';
+    const img  = document.createElement('img');  img.className = 'damage-thumb'; img.src = photo;
+    img.addEventListener('click', () => openPhotoViewer(photo));
+    const del  = document.createElement('button'); del.className = 'damage-thumb-del'; del.textContent = '✕';
+    del.addEventListener('click', e => { e.stopPropagation(); sheetDamagePhotos.splice(i, 1); renderSheetDamageGallery(); });
+    wrap.appendChild(img); wrap.appendChild(del); gallery.appendChild(wrap);
+  });
+  const addBtn = document.createElement('button'); addBtn.className = 'damage-add-btn';
+  addBtn.textContent = '+'; addBtn.onclick = () => document.getElementById('damage-photo-input').click();
+  gallery.appendChild(addBtn);
+}
+
+// Reset damage photos when sheet opens
+function resetDamageSheet() {
+  sheetDamagePhotos = [];
+  renderSheetDamageGallery();
+}
+
+// Load existing damage photos when editing a pin
+async function loadDamagePhotosForPin(pinId) {
+  try {
+    const photos = await api.get('/api/pins/' + pinId + '/photos');
+    detailDamagePhotos = photos || [];
+    // Show in sheet gallery for editing
+    sheetDamagePhotos = []; // new ones only
+    const gallery = document.getElementById('sheet-damage-gallery');
+    gallery.innerHTML = '';
+    // Show existing photos first (can't delete here, delete from detail)
+    detailDamagePhotos.forEach(p => {
+      const wrap = document.createElement('div'); wrap.className = 'damage-thumb-wrap';
+      const img  = document.createElement('img');  img.className = 'damage-thumb'; img.src = p.photo;
+      img.addEventListener('click', () => openPhotoViewer(p.photo));
+      // Show as existing — no delete in edit sheet (manage from detail)
+      wrap.appendChild(img); gallery.appendChild(wrap);
+    });
+    const addBtn = document.createElement('button'); addBtn.className = 'damage-add-btn';
+    addBtn.textContent = '+'; addBtn.onclick = () => document.getElementById('damage-photo-input').click();
+    gallery.appendChild(addBtn);
+  } catch(e) { resetDamageSheet(); }
+}
+
+// Save new damage photos after pin save
+async function saveDamagePhotos(pinId) {
+  for(const photo of sheetDamagePhotos) {
+    try { await api.post('/api/pins/' + pinId + '/photos', { photo }); }
+    catch(e) { console.warn('Failed to save damage photo:', e.message); }
+  }
+  sheetDamagePhotos = [];
+}
+
+// Load and render damage photos in detail view
+async function renderDetailDamageGallery(pinId) {
+  const section = document.getElementById('detail-damage-section');
+  const gallery = document.getElementById('detail-damage-gallery');
+  try {
+    const photos = await api.get('/api/pins/' + pinId + '/photos');
+    detailDamagePhotos = photos || [];
+    if(!detailDamagePhotos.length) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    gallery.innerHTML = '';
+    detailDamagePhotos.forEach(p => {
+      const wrap = document.createElement('div'); wrap.className = 'damage-thumb-wrap';
+      const img  = document.createElement('img');  img.className = 'damage-thumb'; img.src = p.photo;
+      img.addEventListener('click', () => openPhotoViewer(p.photo));
+      const del = document.createElement('button'); del.className = 'damage-thumb-del'; del.textContent = '✕';
+      del.addEventListener('click', async e => {
+        e.stopPropagation();
+        try {
+          await api.del('/api/pins/' + pinId + '/photos/' + p.id);
+          await renderDetailDamageGallery(pinId);
+        } catch(err) { toast('Could not delete photo', 2000); }
+      });
+      wrap.appendChild(img); wrap.appendChild(del); gallery.appendChild(wrap);
+    });
+  } catch(e) { section.style.display = 'none'; }
+}
+
+// ── Route Snap (Map Matching) ────────────────────────────────────
+
+// Auto-snap after stop — runs silently in background
+async function snapRouteBackground(sessionId) {
+  try {
+    const res = await api.post('/api/sessions/' + sessionId + '/snap', {});
+    if(res.snapped) {
+      // Reload sessions to get clean coords
+      const [sessData, pinData, sharedData] = await Promise.all([
+        api.get('/api/sessions'),
+        api.get('/api/pins'), // returns without full photo data for perf
+        api.get('/api/coverage/shared').catch(()=>({sessions:[],pins:[]}))
+      ]);
+      sessions       = sessData  || [];
+      pins           = pinData   || [];
+      importedRoutes = sharedData.sessions || [];
+      importedPins   = sharedData.pins     || [];
+      renderAll();
+      toast(`🛣 Route snapped to roads (${res.snapped} pts)`);
+    }
+  } catch(e) {
+    // Silent fail — raw route stays, no disruption to user
+    console.log('Auto-snap failed:', e.message);
+  }
+}
+
+async function snapRoute(sessionId, cardEl) {
+  const btn = cardEl.querySelector('.snap-btn');
+  const orig = btn.textContent;
+  btn.textContent = 'Fixing…';
+  btn.disabled = true;
+
+  try {
+    const res = await api.post('/api/sessions/' + sessionId + '/snap', {});
+    if(res.error) {
+      toast(res.error, 3000);
+    } else {
+      toast(`✓ Route cleaned — ${res.snapped} road-snapped points (was ${res.original})`);
+      // Reload sessions to get updated coords
+      const [sessData, pinData, sharedData] = await Promise.all([
+        api.get('/api/sessions'),
+        api.get('/api/pins'), // returns without full photo data for perf
+        api.get('/api/coverage/shared').catch(()=>({sessions:[],pins:[]}))
+      ]);
+      sessions       = sessData  || [];
+      pins           = pinData   || [];
+      importedRoutes = sharedData.sessions || [];
+      importedPins   = sharedData.pins     || [];
+      renderAll();
+      renderHistTab('routes');
+    }
+  } catch(e) {
+    toast('Could not clean route', 3000);
+  }
+
+  btn.textContent = orig;
+  btn.disabled = false;
+}
+
+// ── Coverage date filter ───────────────────────────────────────────
+let covDays = 30;
+
+document.querySelectorAll('.cov-day-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.cov-day-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    covDays = parseInt(btn.dataset.cdays);
+    initCoverageMap();
   });
 });
 
 
+// ── CSV Export ────────────────────────────────────────────────────
+function exportPinsCSV() {
+  const headers = ['Address','Status','Owner Name','Phone','Interaction Date','Follow-up Date','Horizon Shingle','Notes','Latitude','Longitude','Date Added'];
+  const rows = pins.map(p => [
+    p.address        || '',
+    p.status         || '',
+    p.owner_name     || '',
+    p.phone          || '',
+    p.interaction_date || '',
+    p.followup_date  || '',
+    p.horizon_shingle ? 'YES' : '',
+    (p.notes || '').replace(/,/g,'；').replace(/\n/g,' '),
+    p.lat,
+    p.lng,
+    (p.created_at || '').split('T')[0]
+  ]);
 
-// Stats endpoint — shows raw IEM data breakdown for debugging
-app.get('/api/storm/stats', async (req, res) => {
-  try {
-    if (!stormCache.data) {
-      return res.json({ error: 'No data cached yet — hit /api/storm/events?days=30 first' });
-    }
-    const byType = {};
-    const raw = stormCache.data;
-    raw.forEach(e => { byType[e.type] = (byType[e.type]||0)+1; });
+  const csvContent = [headers, ...rows]
+    .map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
+    .join('\n');
 
-    // Also show what gets filtered at each threshold
-    const hailAll   = raw.filter(e=>e.type==='hail');
-    const windAll   = raw.filter(e=>e.type==='wind');
-    const tornAll   = raw.filter(e=>e.type==='tornado');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `canvasstrack-leads-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`Exported ${pins.length} touch points`);
+}
 
-    res.json({
-      total_cached: raw.length,
-      by_type: byType,
-      hail:    { total: hailAll.length, ge075: hailAll.filter(e=>e.mag>=0.75).length, ge1: hailAll.filter(e=>e.mag>=1.0).length, ge175: hailAll.filter(e=>e.mag>=1.75).length },
-      wind:    { total: windAll.length, ge45: windAll.filter(e=>e.mag>=45).length, ge58: windAll.filter(e=>e.mag>=58).length, ge75: windAll.filter(e=>e.mag>=75).length },
-      tornado: { total: tornAll.length },
-      date_range: { oldest: raw.map(e=>e.date).sort()[0], newest: raw.map(e=>e.date).sort().reverse()[0] }
-    });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+// ── Map status filter ─────────────────────────────────────────────
+let activeFilters = new Set(['all','Dropped Lit','No Answer','Spoke to Owner','Interested','Appointment']);
+let horizonFilterActive = false;
+
+document.getElementById('filterBtn').addEventListener('click',()=>{
+  const bar = document.getElementById('map-filter');
+  bar.classList.toggle('show');
 });
 
-app.get('/api/storm/hail', (req, res) => res.redirect('/api/storm/events?' + new URLSearchParams(req.query).toString()));
-
-
-// ── Stats ─────────────────────────────────────────────────────────
-app.get('/api/stats', requireAuth, (req, res) => {
-  try {
-    const userId = req.userId;
-    const sessions = db.getUserSessions(userId);
-    const allPins  = db.getUserPins(userId);
-    // Strip photos to prevent 15MB stats query timeout
-    const pins = allPins.map(p => ({...p, photo: null}));
-    const now      = new Date();
-
-    // Helper: date string YYYY-MM-DD
-    const toDate = d => new Date(d).toISOString().split('T')[0];
-    const todayStr    = now.toISOString().split('T')[0];
-    const weekAgo     = new Date(now - 7  * 86400000).toISOString().split('T')[0];
-    const monthAgo    = new Date(now - 30 * 86400000).toISOString().split('T')[0];
-
-    // ── Today ──
-    const todaySessions = sessions.filter(s => toDate(s.started_at) === todayStr);
-    const todayPins     = pins.filter(p => toDate(p.created_at) === todayStr);
-
-    // ── This week ──
-    const weekSessions = sessions.filter(s => toDate(s.started_at) >= weekAgo);
-    const weekPins     = pins.filter(p => toDate(p.created_at) >= weekAgo);
-
-    // ── This month ──
-    const monthPins    = pins.filter(p => toDate(p.created_at) >= monthAgo);
-
-    // ── Status breakdown helper ──
-    const statusCount = arr => arr.reduce((acc, p) => {
-      acc[p.status || 'Unknown'] = (acc[p.status || 'Unknown'] || 0) + 1;
-      return acc;
-    }, {});
-
-    // ── Daily breakdown — 90 days ──
-    const ninetyAgo = new Date(now - 90 * 86400000).toISOString().split('T')[0];
-    const dailyMap = {};
-    for (let d = 89; d >= 0; d--) {
-      const dt = new Date(now - d * 86400000).toISOString().split('T')[0];
-      dailyMap[dt] = { date: dt, pins: 0, interested: 0, appointments: 0, spoke: 0, dropped: 0, routes: 0 };
-    }
-    pins.filter(p => toDate(p.created_at) >= ninetyAgo).forEach(p => {
-      const d = toDate(p.created_at);
-      if (dailyMap[d]) {
-        dailyMap[d].pins++;
-        if (p.status === 'Interested')    dailyMap[d].interested++;
-        if (p.status === 'Appointment')   dailyMap[d].appointments++;
-        if (p.status === 'Spoke to Owner') dailyMap[d].spoke++;
-        if (p.status === 'Dropped Lit')   dailyMap[d].dropped++;
-      }
-    });
-    sessions.filter(s => toDate(s.started_at) >= ninetyAgo).forEach(s => {
-      const d = toDate(s.started_at);
-      if (dailyMap[d]) dailyMap[d].routes++;
-    });
-    const daily = Object.values(dailyMap);
-
-    // ── Weekly breakdown — last 12 weeks ──
-    const weeklyMap = {};
-    for (let w = 11; w >= 0; w--) {
-      const weekStart = new Date(now - (w * 7 + now.getDay()) * 86400000);
-      const wk = weekStart.toISOString().split('T')[0];
-      weeklyMap[wk] = { week: wk, pins: 0, interested: 0, appointments: 0, routes: 0 };
-    }
-    const getWeekStart = d => {
-      const dt = new Date(d);
-      dt.setDate(dt.getDate() - dt.getDay());
-      return dt.toISOString().split('T')[0];
-    };
-    pins.forEach(p => {
-      const wk = getWeekStart(p.created_at);
-      if (weeklyMap[wk]) {
-        weeklyMap[wk].pins++;
-        if (p.status === 'Interested')  weeklyMap[wk].interested++;
-        if (p.status === 'Appointment') weeklyMap[wk].appointments++;
-      }
-    });
-    sessions.forEach(s => {
-      const wk = getWeekStart(s.started_at);
-      if (weeklyMap[wk]) weeklyMap[wk].routes++;
-    });
-    const weekly = Object.values(weeklyMap);
-
-    // ── Conversion rate ──
-    const convRate = arr => {
-      if (!arr.length) return 0;
-      const hot = arr.filter(p => p.status === 'Interested' || p.status === 'Appointment').length;
-      return Math.round((hot / arr.length) * 100);
-    };
-
-    // ── Follow-up stats ──
-    const overdue  = pins.filter(p => p.followup_date && p.followup_date < todayStr).length;
-    const dueToday = pins.filter(p => p.followup_date === todayStr).length;
-    const upcoming = pins.filter(p => p.followup_date && p.followup_date > todayStr).length;
-
-    // ── Best day ──
-    const byDay = {};
-    pins.forEach(p => {
-      const d = toDate(p.created_at);
-      byDay[d] = (byDay[d] || 0) + 1;
-    });
-    const bestDay = Object.entries(byDay).sort((a,b) => b[1]-a[1])[0];
-
-    res.json({
-      today: {
-        routes:      todaySessions.length,
-        pins:        todayPins.length,
-        statuses:    statusCount(todayPins),
-        convRate:    convRate(todayPins),
-      },
-      week: {
-        routes:   weekSessions.length,
-        pins:     weekPins.length,
-        statuses: statusCount(weekPins),
-        convRate: convRate(weekPins),
-      },
-      month: {
-        pins:     monthPins.length,
-        statuses: statusCount(monthPins),
-        convRate: convRate(monthPins),
-      },
-      allTime: {
-        routes:   sessions.length,
-        pins:     pins.length,
-        statuses: statusCount(pins),
-        convRate: convRate(pins),
-        bestDay:  bestDay ? { date: bestDay[0], count: bestDay[1] } : null,
-      },
-      followUps: { overdue, dueToday, upcoming },
-      daily,   // 90-day daily breakdown
-      weekly,  // 12-week breakdown
-    });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+document.getElementById('filt-horizon').addEventListener('click', () => {
+  horizonFilterActive = !horizonFilterActive;
+  const btn = document.getElementById('filt-horizon');
+  btn.style.opacity = horizonFilterActive ? '1' : '.5';
+  btn.classList.toggle('active', horizonFilterActive);
+  applyFilter();
 });
 
-
-// ── Route Cleanup (OSRM Map Matching) ────────────────────────────
-app.post('/api/sessions/:id/snap', requireAuth, async (req, res) => {
-  try {
-    const session = db.getUserSessions(req.userId).find(s => s.id === req.params.id);
-    if(!session) return res.status(404).json({ error: 'Session not found' });
-
-    const coords = session.coords;
-    if(!coords || coords.length < 2)
-      return res.status(400).json({ error: 'Not enough GPS points to snap' });
-
-    // OSRM match API — free, no key needed
-    // Chunk into batches of 100 (OSRM limit per request)
-    const CHUNK = 100;
-    const snapped = [];
-
-    for(let i = 0; i < coords.length; i += CHUNK) {
-      const chunk = coords.slice(i, Math.min(i + CHUNK, coords.length));
-      // OSRM format: lng,lat;lng,lat (note: longitude first)
-      const coordStr  = chunk.map(c => `${c.lng},${c.lat}`).join(';');
-      const radiusStr = chunk.map(() => '35').join(';'); // 35m GPS tolerance
-
-      const url = `https://router.project-osrm.org/match/v1/driving/${coordStr}` +
-        `?overview=full&geometries=geojson&radiuses=${radiusStr}&tidy=true`;
-
-      try {
-        const data = await fetchJSON(url);
-        if(data.code !== 'Ok' || !data.matchings?.length) {
-          // OSRM couldn't snap this chunk — keep original points
-          chunk.forEach(c => snapped.push(c));
-          continue;
-        }
-        // Extract snapped coordinates from all matchings
-        for(const matching of data.matchings) {
-          const pts = matching.geometry.coordinates; // [lng, lat] pairs
-          pts.forEach((pt, idx) => {
-            snapped.push({
-              lat: pt[1],
-              lng: pt[0],
-              recorded_at: chunk[Math.min(idx, chunk.length-1)].recorded_at
-            });
-          });
-        }
-      } catch(e) {
-        // OSRM failed for this chunk — keep originals
-        console.log('OSRM chunk failed:', e.message);
-        chunk.forEach(co => snapped.push(co));
+document.querySelectorAll('.filt-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const status = btn.dataset.status;
+    if(status === 'all'){
+      const allOn = activeFilters.has('all');
+      if(allOn){
+        activeFilters.clear();
+        document.querySelectorAll('.filt-btn').forEach(b=>b.classList.remove('active'));
+      } else {
+        activeFilters = new Set(['all','Dropped Lit','No Answer','Spoke to Owner','Interested','Appointment']);
+        document.querySelectorAll('.filt-btn').forEach(b=>b.classList.add('active'));
       }
+    } else {
+      if(activeFilters.has(status)){ activeFilters.delete(status); btn.classList.remove('active'); }
+      else { activeFilters.add(status); btn.classList.add('active'); }
+      // Update "all" state
+      const allStatuses = ['Dropped Lit','No Answer','Spoke to Owner','Interested','Appointment'];
+      if(allStatuses.every(s=>activeFilters.has(s))){ activeFilters.add('all'); document.querySelector('.filt-btn[data-status="all"]').classList.add('active'); }
+      else { activeFilters.delete('all'); document.querySelector('.filt-btn[data-status="all"]').classList.remove('active'); }
     }
+    applyFilter();
+  });
+});
 
-    // Save snapped coords back to DB
-    db.replaceSessionCoords(session.id, snapped);
-    res.json({ snapped: snapped.length, original: coords.length });
+function applyFilter(){
+  allPinMarkers.forEach((marker, idx) => {
+    const pin = [...pins, ...importedPins][idx];
+    if(!pin) return;
+    const status = pin.status || 'Dropped Lit';
+    const statusOk = activeFilters.has('all') || activeFilters.has(status);
+    const horizonOk = !horizonFilterActive || !!pin.horizon_shingle;
+    const visible = statusOk && horizonOk;
+    if(pinClusterGroup) {
+      if(visible && !pinClusterGroup.hasLayer(marker)) pinClusterGroup.addLayer(marker);
+      else if(!visible && pinClusterGroup.hasLayer(marker)) pinClusterGroup.removeLayer(marker);
+    } else {
+      if(visible){ if(!map.hasLayer(marker)) marker.addTo(map); }
+      else { if(map.hasLayer(marker)) map.removeLayer(marker); }
+    }
+  });
+}
 
+
+
+// ── Wake Lock (keep screen on while tracking) ─────────────────────
+let wakeLock = null;
+
+async function requestWakeLock() {
+  // Wake Lock API — prevents screen from sleeping
+  if ('wakeLock' in navigator) {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => {
+        // Screen lock was released externally (e.g. battery saver)
+        // Try to reacquire if still tracking
+        if(tracking) requestWakeLock();
+      });
+      console.log('Wake lock acquired');
+    } catch(e) {
+      console.log('Wake lock failed:', e.message);
+      // Fallback: silent audio loop
+      startSilentAudio();
+    }
+  } else {
+    // iOS doesn't support Wake Lock API yet — use silent audio fallback
+    startSilentAudio();
+  }
+}
+
+function releaseWakeLock() {
+  if(wakeLock) { wakeLock.release(); wakeLock = null; }
+  stopSilentAudio();
+}
+
+// Silent audio fallback for iOS — prevents suspension
+let silentAudio = null;
+function startSilentAudio() {
+  if(silentAudio) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001; // essentially silent
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start();
+    silentAudio = { ctx, oscillator };
+    console.log('Silent audio started for GPS keep-alive');
   } catch(e) {
-    console.error('Snap error:', e.message);
-    res.status(500).json({ error: e.message });
+    console.log('Silent audio failed:', e.message);
+  }
+}
+
+function stopSilentAudio() {
+  if(silentAudio) {
+    try { silentAudio.oscillator.stop(); silentAudio.ctx.close(); }
+    catch(e) {}
+    silentAudio = null;
+  }
+}
+
+// Re-acquire wake lock when app comes back to foreground
+document.addEventListener('visibilitychange', () => {
+  if(!document.hidden && tracking && !wakeLock) {
+    requestWakeLock();
   }
 });
 
+// ── Offline Queue ─────────────────────────────────────────────────
+// Coords and pins that failed to sync get stored here and retried
+const OFFLINE_COORDS_KEY = 'ct_offline_coords'; // {sessionId, coords[]}[]
+const OFFLINE_PINS_KEY   = 'ct_offline_pins';   // pin[]
+let isOnline = navigator.onLine;
+let syncInProgress = false;
 
-// ── Pin Photos ────────────────────────────────────────────────────
+function getOfflineCoords() {
+  try { return JSON.parse(localStorage.getItem(OFFLINE_COORDS_KEY) || '[]'); } catch(e) { return []; }
+}
+function getOfflinePins() {
+  try { return JSON.parse(localStorage.getItem(OFFLINE_PINS_KEY) || '[]'); } catch(e) { return []; }
+}
+function saveOfflineCoords(data) { localStorage.setItem(OFFLINE_COORDS_KEY, JSON.stringify(data)); }
+function saveOfflinePins(data)   { localStorage.setItem(OFFLINE_PINS_KEY,   JSON.stringify(data)); }
 
-// Get photos for a pin
-app.get('/api/pins/:id/photos', requireAuth, (req, res) => {
-  try {
-    res.json(db.getPinPhotos(req.params.id));
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
+function queueCoordsOffline(sessionId, coords) {
+  const queue = getOfflineCoords();
+  const existing = queue.find(q => q.sessionId === sessionId);
+  if(existing) { existing.coords.push(...coords); }
+  else { queue.push({ sessionId, coords }); }
+  saveOfflineCoords(queue);
+  updateOfflineUI();
+}
 
-// Add a damage photo to a pin
-app.post('/api/pins/:id/photos', requireAuth, (req, res) => {
-  try {
-    const { photo, caption } = req.body;
-    if(!photo) return res.status(400).json({ error: 'photo required' });
-    const id = Date.now() + Math.random().toString(36).slice(2);
-    db.addPinPhoto(id, req.params.id, req.userId, photo, caption);
-    res.json({ id, pin_id: req.params.id, photo, caption, created_at: new Date().toISOString() });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
+function queuePinOffline(pin) {
+  const queue = getOfflinePins();
+  queue.push(pin);
+  saveOfflinePins(queue);
+  updateOfflineUI();
+}
 
-// Delete a damage photo
-app.delete('/api/pins/:pinId/photos/:photoId', requireAuth, (req, res) => {
-  try {
-    db.deletePinPhoto(req.params.photoId, req.userId);
-    res.json({ deleted: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
+function updateOfflineUI() {
+  const banner = document.getElementById('offline-banner');
+  const coords = getOfflineCoords();
+  const pins   = getOfflinePins();
+  const totalQueued = coords.reduce((n, q) => n + q.coords.length, 0) + pins.length;
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+  if(!isOnline) {
+    banner.classList.add('show');
+    if(totalQueued > 0) banner.textContent = `📵 Offline — ${totalQueued} points queued`;
+    else banner.textContent = '📵 No signal — tracking locally';
+  } else {
+    banner.classList.remove('show');
+  }
+}
 
-app.listen(PORT, () => {
-  console.log(`CanvassTrack running on http://localhost:${PORT}`);
-  // Pre-warm storm cache so first user tap is instant
-  setTimeout(async () => {
+async function syncOfflineQueue() {
+  if(syncInProgress) return;
+  const coords = getOfflineCoords();
+  const pins   = getOfflinePins();
+  if(!coords.length && !pins.length) return;
+
+  syncInProgress = true;
+  const badge = document.getElementById('sync-badge');
+  badge.classList.add('show');
+
+  let coordsFailed = [];
+  let pinsFailed   = [];
+
+  // Sync queued coords
+  for(const item of coords) {
     try {
-      console.log('Pre-warming storm cache...');
-      const ets = new Date();
-      const sts = new Date(Date.now() - 365 * 86400000);
-      const toISOSimple = d => d.toISOString().split('.')[0] + 'Z';
-      const url = 'https://mesonet.agron.iastate.edu/geojson/lsr.geojson' +
-        '?sts=' + toISOSimple(sts) + '&ets=' + toISOSimple(ets) +
-        '&type=H&type=T&type=D&type=G&type=W';
-      const geojson = await fetchJSON(url);
-      const features = geojson.features || [];
-      // SPC pre-warm handled by loadSPCData
-      stormCache.data = await loadSPCData();
-      stormCache.fetchedAt = Date.now();
-      console.log(`Storm cache ready: ${all.length} events`);
+      await api.post(`/api/sessions/${item.sessionId}/coords`, { coords: item.coords });
     } catch(e) {
-      console.log('Storm pre-warm failed (will retry on first request):', e.message);
+      coordsFailed.push(item); // keep for next retry
     }
-  }, 5000); // wait 5s after startup
+  }
+
+  // Sync queued pins
+  for(const pin of pins) {
+    try {
+      const saved = await api.post('/api/pins', pin);
+      pins.push(saved); // add to local state
+    } catch(e) {
+      pinsFailed.push(pin);
+    }
+  }
+
+  saveOfflineCoords(coordsFailed);
+  saveOfflinePins(pinsFailed);
+  syncInProgress = false;
+  badge.classList.remove('show');
+
+  const synced = (coords.length - coordsFailed.length) + (pins.length - pinsFailed.length);
+  if(synced > 0) {
+    toast(`✓ Synced ${synced} queued items`);
+    if(!pinsFailed.length) renderAll();
+  }
+  updateOfflineUI();
+}
+
+// Online/offline events
+window.addEventListener('online', () => {
+  isOnline = true;
+  updateOfflineUI();
+  syncOfflineQueue();
 });
+window.addEventListener('offline', () => {
+  isOnline = false;
+  updateOfflineUI();
+});
+
+// Also check on visibility change (app comes back to foreground)
+document.addEventListener('visibilitychange', () => {
+  if(!document.hidden && navigator.onLine) {
+    isOnline = true;
+    syncOfflineQueue();
+  }
+});
+
+// Initial check
+updateOfflineUI();
+if(navigator.onLine) {
+  // Sync any leftover queue from previous session
+  setTimeout(syncOfflineQueue, 3000);
+}
+
+
+// ── Hide floating UI when panels open ────────────────────────────
+function hideFloatingUI() {
+  // Hide storm overlay bar
+  if(document.getElementById('storm-bar').classList.contains('show')) {
+    document.getElementById('storm-bar').classList.remove('show');
+    document.getElementById('storm-legend').classList.remove('show');
+    stormMarkers.forEach(m => map.removeLayer(m));
+    stormMarkers = [];
+    stormVisible = false;
+  }
+  // Hide filter bar
+  document.getElementById('map-filter').classList.remove('show');
+  // Hide coverage add button
+  document.getElementById('coverage-add-btn').classList.remove('show');
+  // Hide follow button
+  showFollowBtn(false);
+}
+
+// ── Auth ──────────────────────────────────────────────────────────
+function showAuthScreen(){ document.getElementById('auth-screen').classList.remove('hidden'); }
+function hideAuthScreen(){ document.getElementById('auth-screen').classList.add('hidden'); }
+
+function setUser(token, user){
+  authToken = token;
+  currentUser = user;
+  localStorage.setItem('ct_token', token);
+  localStorage.setItem('ct_user', JSON.stringify(user));
+  const badge = document.getElementById('user-name-badge');
+  if(badge) badge.textContent = user.name;
+  hideAuthScreen();
+}
+
+
+// Tab switching
+document.querySelectorAll('.auth-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('login-form').style.display = tab.dataset.auth === 'login' ? 'block' : 'none';
+    document.getElementById('register-form').style.display = tab.dataset.auth === 'register' ? 'block' : 'none';
+    document.getElementById('forgot-link').style.display = tab.dataset.auth === 'login' ? 'block' : 'none';
+    document.getElementById('auth-error').textContent = '';
+  });
+});
+
+// Login
+document.getElementById('login-btn').addEventListener('click', async () => {
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl    = document.getElementById('auth-error');
+  errEl.textContent = '';
+  if(!email || !password){ errEl.textContent = 'Please fill in all fields'; return; }
+  document.getElementById('login-btn').textContent = 'Logging in…';
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if(!res.ok){ errEl.textContent = data.error || 'Login failed'; }
+    else { setUser(data.token, data.user); sessions=[]; pins=[]; load(); }
+  } catch(e) { errEl.textContent = 'Network error — try again'; }
+  document.getElementById('login-btn').textContent = 'Log In';
+});
+
+// Enter key on login and register forms
+['login-email','login-password'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if(e.key === 'Enter') document.getElementById('login-btn').click();
+  });
+});
+['reg-name','reg-email','reg-password'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if(e.key === 'Enter') document.getElementById('register-btn').click();
+  });
+});
+
+// Register
+document.getElementById('register-btn').addEventListener('click', async () => {
+  const name     = document.getElementById('reg-name').value.trim();
+  const email    = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const errEl    = document.getElementById('auth-error');
+  errEl.textContent = '';
+  if(!name || !email || !password){ errEl.textContent = 'Please fill in all fields'; return; }
+  document.getElementById('register-btn').textContent = 'Creating account…';
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name, email, password })
+    });
+    const data = await res.json();
+    if(!res.ok){ errEl.textContent = data.error || 'Registration failed'; }
+    else { setUser(data.token, data.user); sessions=[]; pins=[]; load(); }
+  } catch(e) { errEl.textContent = 'Network error — try again'; }
+  document.getElementById('register-btn').textContent = 'Create Account';
+});
+
+// Check if already logged in on startup
+async function initAuth(){
+  if(authToken && currentUser){
+    try {
+      const res = await fetch('/api/auth/me', { headers: authHeaders() });
+      if(res.ok){
+        const user = await res.json();
+        setUser(authToken, user);
+        load();
+        return;
+      }
+    } catch(e) {}
+    // Token invalid — clear and show login
+    localStorage.removeItem('ct_token');
+    localStorage.removeItem('ct_user');
+    authToken = null; currentUser = null;
+  }
+  showAuthScreen();
+}
+
+
+// ── Quick Pin (long press on map = instant No Answer) ─────────────
+let longPressTimer = null;
+
+function startLongPress(latlng) {
+  longPressTimer = setTimeout(async () => {
+    if(!tracking) return;
+    if(navigator.vibrate) navigator.vibrate(50);
+    const addr = await reverseGeocode(latlng.lat, latlng.lng);
+    const pin = {
+      id: Date.now()+'', lat:latlng.lat, lng:latlng.lng,
+      address: addr==='Unknown location'?'':addr,
+      status:'No Answer', notes:'', photo:null,
+      owner_name:null, phone:null, followup_date:null,
+      horizon_shingle:0, interaction_date:new Date().toISOString().split('T')[0],
+      sessionId: curSession?curSession.id:null
+    };
+    try {
+      const saved = await api.post('/api/pins', pin);
+      pins.push(saved); drawPin(saved);
+      document.getElementById('quickpin-label').textContent = 'No Answer — ' + (addr.split(',')[0]||'logged');
+    } catch(e) {
+      const lp = {...pin,user_id:'local',created_at:new Date().toISOString()};
+      pins.push(lp); drawPin(lp); queuePinOffline(pin);
+      document.getElementById('quickpin-label').textContent = 'Saved offline';
+    }
+    const qt = document.getElementById('quickpin-toast');
+    qt.classList.add('show');
+    setTimeout(()=>qt.classList.remove('show'), 2500);
+  }, 600);
+}
+function cancelLongPress(){ clearTimeout(longPressTimer); longPressTimer=null; }
+
+map.on('mousedown',  e=>{ if(tracking&&!dropMode) startLongPress(e.latlng); });
+map.on('mouseup',    ()=>cancelLongPress());
+map.on('mousemove',  ()=>cancelLongPress());
+map.on('dragstart',  ()=>cancelLongPress());
+map.on('touchstart', e=>{ if(tracking&&!dropMode&&e.originalEvent.touches.length===1) startLongPress(e.latlng); });
+map.on('touchend',   ()=>cancelLongPress());
+map.on('touchmove',  ()=>cancelLongPress());
+
+// ── Pin Drop Mode ────────────────────────────────────────────────
+let dropMode = false;
+
+function enterDropMode(){
+  dropMode = true;
+  document.getElementById('pin-crosshair').classList.add('active');
+  document.getElementById('pin-confirm-bar').classList.add('active');
+  document.body.classList.add('drop-mode');
+  followMode = false;
+}
+
+function exitDropMode(){
+  dropMode = false;
+  document.getElementById('pin-crosshair').classList.remove('active');
+  document.getElementById('pin-confirm-bar').classList.remove('active');
+  document.body.classList.remove('drop-mode');
+  followMode = true;
+  showFollowBtn(false);
+}
+
+document.getElementById('pinBtn').addEventListener('click',()=>{
+  if(!tracking) return;
+  if(dropMode){ exitDropMode(); return; }
+  enterDropMode();
+});
+
+document.getElementById('pin-cancel-btn').addEventListener('click',()=>{
+  exitDropMode();
+  toast('Pin cancelled');
+});
+
+document.getElementById('pin-confirm-btn').addEventListener('click',()=>{
+  const center = map.getCenter();
+  exitDropMode();
+  openSheet({ lat: center.lat, lng: center.lng }, null);
+});
+
+// ── Photo ─────────────────────────────────────────────────────────
+document.getElementById('photo-input-camera').addEventListener('change', function(){ handlePhotoFile(this); });
+document.getElementById('photo-input').addEventListener('change',function(){
+  handlePhotoFile(this);
+});
+
+function handlePhotoFile(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      const MAX=800;let w=img.width,h=img.height;
+      if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+      if(h>800){w=Math.round(w*800/h);h=800;}
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      pendingPhoto=canvas.toDataURL('image/jpeg',0.7);
+      document.getElementById('photo-preview').src=pendingPhoto;
+      document.getElementById('photo-preview-wrap').style.display='block';
+      document.getElementById('photo-btn').style.display='none';
+      document.getElementById('photo-btn-camera').style.display='none';
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+document.getElementById('photo-remove').addEventListener('click',()=>{
+  pendingPhoto=null;
+  document.getElementById('photo-preview-wrap').style.display='none';
+  document.getElementById('photo-btn').style.display='flex';
+  document.getElementById('photo-btn-camera').style.display='flex';
+  document.getElementById('photo-input').value='';
+  document.getElementById('photo-input-camera').value='';
+});
+
+// ── Pin sheet — handles both NEW and EDIT ─────────────────────────
+// latlng: {lat,lng}  existingPin: null = new, object = editing
+function openSheet(latlng, existingPin){
+  editingPin = existingPin;
+  pendingLL  = latlng;
+  pendingPhoto = null;
+
+  // Reset photo UI
+  document.getElementById('photo-preview-wrap').style.display='none';
+  document.getElementById('photo-btn').style.display='flex';
+  document.getElementById('photo-btn-camera').style.display='flex';
+  document.getElementById('photo-input').value='';
+  document.getElementById('photo-input-camera').value='';
+
+  if(existingPin){
+    // Edit mode — pre-fill everything
+    document.getElementById('sheet-title').textContent='✏️ Edit Stop';
+    loadDamagePhotosForPin(existingPin.id);
+    autoExpandDetails(existingPin);
+    document.getElementById('delete-pin-btn').classList.add('show');
+    document.getElementById('saddr-input').value=existingPin.address||'';
+    document.getElementById('interaction-date-input').value=existingPin.interaction_date||new Date().toISOString().split('T')[0];
+    setHorizon(existingPin.horizon_shingle);
+    document.getElementById('owner-name-input').value=existingPin.owner_name||'';
+    document.getElementById('phone-input').value=existingPin.phone||'';
+    document.getElementById('followup-input').value=existingPin.followup_date||'';
+    document.getElementById('notes').value=existingPin.notes||'';
+    selStatus=existingPin.status||'';
+    document.querySelectorAll('.tag').forEach(t=>{
+      t.classList.toggle('sel',t.dataset.s===selStatus);
+    });
+    if(existingPin.photo){
+      pendingPhoto=existingPin.photo;
+      document.getElementById('photo-preview').src=existingPin.photo;
+      document.getElementById('photo-preview-wrap').style.display='block';
+      document.getElementById('photo-btn').style.display='none';
+    }
+  } else {
+    // New pin mode
+    document.getElementById('sheet-title').textContent='📍 Log this stop';
+    autoExpandDetails(null);
+    document.getElementById('delete-pin-btn').classList.remove('show');
+    document.getElementById('saddr-input').value='';
+    document.getElementById('interaction-date-input').value=new Date().toISOString().split('T')[0];
+    document.getElementById('owner-name-input').value='';
+    document.getElementById('phone-input').value='';
+    document.getElementById('followup-input').value='';
+    document.getElementById('notes').value='';
+    setHorizon(false);
+    selStatus='';
+    document.querySelectorAll('.tag').forEach(t=>t.classList.remove('sel'));
+    // Auto-fill address
+    document.getElementById('saddr-input').value='Getting address…';
+    reverseGeocode(latlng.lat,latlng.lng).then(a=>{
+      document.getElementById('saddr-input').value=a==='Unknown location'?'':a;
+    });
+  }
+
+  hideFloatingUI();
+  document.getElementById('sheet-bg').classList.add('open');
+}
+
+document.querySelectorAll('.tag').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.tag').forEach(x=>x.classList.remove('sel'));
+    t.classList.add('sel');selStatus=t.dataset.s;
+  });
+});
+
+document.getElementById('bcancel').addEventListener('click',()=>{
+  document.getElementById('sheet-bg').classList.remove('open');
+  pendingLL=null;pendingPhoto=null;editingPin=null;
+});
+
+document.getElementById('sheet-bg').addEventListener('click',e=>{
+  if(e.target===document.getElementById('sheet-bg')){
+    document.getElementById('sheet-bg').classList.remove('open');
+    pendingLL=null;pendingPhoto=null;editingPin=null;
+  }
+});
+
+document.getElementById('bsave').addEventListener('click',async()=>{
+  const rawAddr=document.getElementById('saddr-input').value.trim();
+  const addr=(rawAddr==='Getting address…'||rawAddr==='Getting address...')?'':rawAddr;
+  const notes=document.getElementById('notes').value.trim();
+  const status=selStatus||'Dropped Lit';
+  const photo=pendingPhoto||null;
+  const interaction_date=document.getElementById('interaction-date-input').value||new Date().toISOString().split('T')[0];
+  const owner_name=document.getElementById('owner-name-input').value.trim()||null;
+  const phone=document.getElementById('phone-input').value.trim()||null;
+  const followup_date=document.getElementById('followup-input').value||null;
+  const horizon_shingle=horizonShingle?1:0;
+
+  if(editingPin){
+    // UPDATE existing pin
+    const updated={...editingPin,address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,horizon_shingle};
+    try{
+      await api.patch('/api/pins/'+editingPin.id,{address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,horizon_shingle});
+      await saveDamagePhotos(editingPin.id);
+      // Update local array
+      const idx=pins.findIndex(p=>p.id===editingPin.id);
+      if(idx>=0)pins[idx]=updated;
+      // Redraw all pins on map
+      renderAll();
+      // Refresh history if open
+      if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
+      toast('Pin updated ✓');
+    }catch(e){toast('Could not update',3000);}
+  } else {
+    // CREATE new pin
+    if(!pendingLL)return;
+    const pin={
+      id:Date.now()+'',lat:pendingLL.lat,lng:pendingLL.lng,
+      address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,horizon_shingle,
+      sessionId:curSession?curSession.id:null
+    };
+    if(!navigator.onLine){
+      // Offline — save locally, draw on map, queue for sync
+      const localPin = {...pin, user_id:'local', created_at:new Date().toISOString()};
+      pins.push(localPin); drawPin(localPin);
+      queuePinOffline(pin);
+      toast('📵 Saved locally — will sync when online');
+    } else {
+      try{
+        const saved=await api.post('/api/pins',pin);
+        pins.push(saved);drawPin(saved);
+        await saveDamagePhotos(saved.id);
+        toast('Pin saved ✓');
+      }catch(e){
+        // Failed — save locally and queue
+        const localPin = {...pin, user_id:'local', created_at:new Date().toISOString()};
+        pins.push(localPin); drawPin(localPin);
+        queuePinOffline(pin);
+        toast('📵 Saved locally — will sync when online');
+      }
+    }
+  }
+
+  document.getElementById('sheet-bg').classList.remove('open');
+  pendingLL=null;pendingPhoto=null;editingPin=null;
+});
+
+// Delete pin
+document.getElementById('delete-pin-btn').addEventListener('click',async()=>{
+  if(!editingPin)return;
+  showConfirm('Delete this pin?', async ()=>{
+    try{
+      const pinId = editingPin.id;
+      await api.del('/api/pins/'+pinId);
+      pins=pins.filter(p=>p.id!==pinId);
+      renderAll();
+      if(document.getElementById('hist-panel').classList.contains('open'))renderHistTab(histTab);
+      toast('Pin deleted');
+    }catch(e){ toast('Could not delete',3000); }
+    document.getElementById('sheet-bg').classList.remove('open');
+    pendingLL=null; pendingPhoto=null; editingPin=null;
+  }, 'Delete');
+});
+
+// ── History ───────────────────────────────────────────────────────
+
+// Live search in touch points tab
+document.getElementById('pin-search').addEventListener('input', () => {
+  if(histTab === 'pins') renderHistTab('pins');
+});
+
+document.getElementById('historyBtn').addEventListener('click',()=>{
+  hideFloatingUI();
+  document.getElementById('hist-panel').classList.add('open');renderHistTab(histTab);
+});
+document.getElementById('hist-close').addEventListener('click',()=>{
+  document.getElementById('hist-panel').classList.remove('open');
+  document.getElementById('coverage-add-btn').classList.remove('show');
+  const sw = document.getElementById('storms-wrap'); if(sw) sw.style.display='none';
+});
+document.querySelectorAll('.htab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.htab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');histTab=tab.dataset.tab;renderHistTab(histTab);
+  });
+});
+
+function renderHistTab(tab){
+  const body=document.getElementById('hist-body');
+  body.innerHTML='<div style="text-align:center;padding:40px;color:#2a2a2a;font-size:13px">Loading…</div>';
+  const cov=document.getElementById('coverage-wrap');
+  const stormsWrap = document.getElementById('storms-wrap');
+
+  if(tab==='storms'){
+    body.style.display='none';
+    cov.classList.remove('active');
+    document.getElementById('coverage-add-btn').classList.remove('show');
+    stormsWrap.style.display='flex';
+    setTimeout(renderStormsTab, 50);
+    return;
+  }
+
+  stormsWrap.style.display='none';
+
+  if(tab==='coverage'){
+    body.style.display='none';cov.classList.add('active');document.getElementById('coverage-add-btn').classList.add('show');setTimeout(()=>{ initCoverageMap(); },50);return;
+  }
+  body.style.display='block';cov.classList.remove('active');document.getElementById('coverage-add-btn').classList.remove('show');
+  const ps=document.getElementById('pin-search');if(ps)ps.style.display=tab==='pins'?'block':'none';
+
+  if(tab==='routes'){
+    if(!sessions.length){body.innerHTML='<div class="empty-state"><div class="empty-icon">🗺️</div><div class="empty-text">No routes yet.<br><br>Tap <strong style="color:#f5a623">▶ Start Tracking</strong> to record your first route.</div></div>';return;}
+    body.innerHTML='';
+    [...sessions].reverse().forEach((s,ri)=>{
+      const idx=sessions.length-1-ri;
+      const d=new Date(s.started_at);
+      const coords=s.coords||[];
+      const pc=pins.filter(p=>p.session_id===s.id||p.sessionId===s.id).length;
+      const card=document.createElement('div');card.className='route-card';
+      card.innerHTML=`<div class="route-swatch" style="background:${s.color||sCol(idx)}"></div><div class="route-info"><div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div><div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} pts · ${pc} pin${pc!==1?'s':''}</div></div><div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0"><button class="shr-btn" style="background:transparent;border:1px solid #f5a623;color:#f5a623;border-radius:8px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer;min-height:44px">Share</button><button class="snap-btn" data-id="${s.id}" style="background:transparent;border:1px solid #00c9a7;color:#00c9a7;border-radius:8px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer;min-height:44px">↺ Re-snap</button></div>`;
+      card.querySelector('.shr-btn').addEventListener('click',e=>{ e.stopPropagation(); shareSession(s.id); });
+      card.querySelector('.snap-btn').addEventListener('click',e=>{ e.stopPropagation(); snapRoute(s.id, card); });
+      card.addEventListener('click',()=>{
+        document.getElementById('hist-panel').classList.remove('open');
+        if(coords.length>1)map.fitBounds(L.latLngBounds(coords.map(c=>[c.lat,c.lng])),{padding:[40,40]});
+      });
+      body.appendChild(card);
+    });
+
+    // Imported/shared routes from partners
+    importedRoutes.forEach((r,i)=>{
+      const d = new Date(r.started_at||Date.now());
+      const color = SHARED_COLORS[i % SHARED_COLORS.length];
+      const coords = r.coords||[];
+      const rc = document.createElement('div'); rc.className='route-card';
+      rc.style.borderColor = '#1c2a2a';
+      rc.innerHTML=`
+        <div class="route-swatch" style="background:${color};opacity:.7"></div>
+        <div class="route-info">
+          <div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>
+          <div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} pts</div>
+          <div style="font-size:11px;color:${color};font-weight:700;margin-top:3px">📤 Shared by ${r.owner_name||'Partner'}</div>
+        </div>
+        <button class="remove-shared-btn" data-sid="${r.session_id}" style="background:none;border:none;color:#444;font-size:20px;cursor:pointer;padding:4px 8px;flex-shrink:0" title="Remove">✕</button>`;
+      rc.querySelector('.remove-shared-btn').addEventListener('click', async e=>{
+        e.stopPropagation();
+        showConfirm('Remove this shared route from your coverage?', async ()=>{
+          try{
+            await api.del('/api/coverage/shared/'+r.session_id);
+            await load(); renderHistTab('routes'); initCoverageMap();
+            toast('Shared route removed');
+          }catch(ex){ toast('Could not remove',3000); }
+        });
+      });
+      rc.addEventListener('click',()=>{
+        document.getElementById('hist-panel').classList.remove('open');
+        if(coords.length>1) map.fitBounds(L.latLngBounds(coords.map(c=>[c.lat,c.lng])),{padding:[40,40]});
+      });
+      body.appendChild(rc);
+    });
+  }
+
+  if(tab==='pins'){
+    const today = new Date().toISOString().split('T')[0];
+    const dueToday = pins.filter(p=>p.followup_date && p.followup_date <= today);
+    // CSV export button
+    const exportBtn = document.createElement('button');
+    exportBtn.textContent = '⬇️ Export CSV';
+    exportBtn.style.cssText = 'display:block;width:100%;padding:12px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;color:#f5a623;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:14px';
+    exportBtn.addEventListener('click', exportPinsCSV);
+    body.appendChild(exportBtn);
+
+    // Search filter
+    const searchEl = document.getElementById('pin-search');
+    const searchQ = (searchEl?.value||'').toLowerCase().trim();
+    let allPins = [...pins, ...importedPins.map(p=>({...p, _shared:true}))];
+    if(searchQ) {
+      allPins = allPins.filter(p =>
+        (p.address||'').toLowerCase().includes(searchQ) ||
+        (p.owner_name||'').toLowerCase().includes(searchQ) ||
+        (p.notes||'').toLowerCase().includes(searchQ) ||
+        (p.status||'').toLowerCase().includes(searchQ)
+      );
+    }
+    if(!allPins.length){
+      const q = document.getElementById('pin-search')?.value;
+      const msg = q
+        ? 'No pins match "' + q + '"'
+        : 'No touch points yet.<br><br>While tracking, tap <strong style="color:#f5a623">📍</strong> to log a stop, or <strong style="color:#f5a623">long-press</strong> the map for a quick No Answer.';
+      body.innerHTML = '<div class="empty-state"><div class="empty-icon">' + (q?'🔍':'📍') + '</div><div class="empty-text">' + msg + '</div></div>';
+      return;
+    }
+    body.innerHTML='';
+    // Due today / overdue section
+    if(dueToday.length){
+      const hdr = document.createElement('div'); hdr.className='due-today-header';
+      hdr.innerHTML=`🔴 Follow-up Due (${dueToday.length})`;
+      body.appendChild(hdr);
+      dueToday.sort((a,b)=>a.followup_date.localeCompare(b.followup_date)).forEach(pin=>{
+        const c2=STATUS_COLORS[pin.status]||'#f5a623';
+        const d2=document.createElement('div');d2.className='pin-card';d2.style.borderColor='#e03b3b44';
+        d2.innerHTML=`<div style="display:flex;gap:12px;align-items:flex-start"><div style="flex:1;min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div class="pin-addr">${pin.address||'Unnamed stop'}</div><button class="pin-edit-btn" style="flex-shrink:0;min-width:44px;min-height:44px">✏️</button></div><span class="pin-badge" style="background:${c2}22;color:${c2};border:1px solid ${c2}44;display:inline-block;margin-bottom:4px">${pin.status||'–'}</span>${pin.owner_name?`<div style="font-size:12px;color:#888">👤 ${pin.owner_name}</div>`:''} ${pin.phone?`<div style="font-size:12px;color:#888">📞 ${pin.phone}</div>`:''} ${followupBadge(pin.followup_date)}</div></div>`;
+        d2.querySelector('.pin-edit-btn').addEventListener('click',e=>{e.stopPropagation();document.getElementById('hist-panel').classList.remove('open');openSheet({lat:pin.lat,lng:pin.lng},pin);});
+        d2.addEventListener('click',e=>{if(e.target.classList.contains('pin-edit-btn'))return;document.getElementById('hist-panel').classList.remove('open');map.setView([pin.lat,pin.lng],18);});
+        body.appendChild(d2);
+      });
+      const sep=document.createElement('div');sep.style.cssText='height:1px;background:#1c1c1c;margin:12px 0 14px';body.appendChild(sep);
+    }
+    [...allPins].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)).forEach(pin=>{
+      const c = STATUS_COLORS[pin.status]||'#f5a623';
+      const d = new Date(pin.created_at||Date.now());
+      const isShared = !!pin._shared;
+      const card = document.createElement('div'); card.className='pin-card';
+      card.innerHTML=`
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          ${pin.photo ? `<img class="pin-thumb" src="${pin.photo}" alt="roof"/>` : ''}
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:5px">
+              <div class="pin-addr">${pin.address||'Unnamed stop'}</div>
+              <button class="pin-nav-btn" data-lat="${pin.lat}" data-lng="${pin.lng}" data-addr="${pin.address||''}" style="flex-shrink:0;min-width:44px;min-height:44px;background:transparent;border:none;font-size:18px;cursor:pointer">🧭</button>
+              ${isShared ? '' : `<button class="pin-edit-btn" data-id="${pin.id}" style="flex-shrink:0;min-width:44px;min-height:44px">✏️</button>`}
+            </div>
+            <span class="pin-badge" style="background:${c}22;color:${c};border:1px solid ${c}44;display:inline-block;margin-bottom:6px">${pin.status||'–'}</span>
+            ${pin.notes ? `<div class="pin-notes">${pin.notes}</div>` : ''}
+            ${pin.owner_name && !isShared ? `<div style="font-size:12px;color:#888;margin-top:3px">👤 ${pin.owner_name}</div>` : ''}
+            ${pin.phone && !isShared ? `<div style="font-size:12px;color:#888">📞 ${pin.phone}</div>` : ''}
+            ${pin.followup_date && !isShared ? followupBadge(pin.followup_date) : ''}
+            ${pin.horizon_shingle ? `<div class="horizon-badge" style="margin-top:5px">🏠 Horizon Shingle</div>` : ''}
+            ${isShared ? `<div style="font-size:11px;color:#00c9a7;font-weight:700;margin-top:4px">📤 Shared by ${pin.owner_name||'Partner'}</div>` : ''}
+            <div class="pin-time" style="margin-top:6px">${pin.interaction_date ? '📅 '+formatDate(pin.interaction_date) : d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+            ${(()=>{const s=sessions.find(s=>s.id===(pin.session_id||pin.sessionId));return s?`<div style="font-size:10px;color:#2a2a2a;margin-top:2px">Route: ${formatDate(s.started_at)}</div>`:''})()}
+          </div>
+        </div>
+      `;
+      card.addEventListener('click',e=>{
+        if(e.target.classList.contains('pin-edit-btn')) return;
+        document.getElementById('hist-panel').classList.remove('open');
+        map.setView([pin.lat,pin.lng],18);
+      });
+      if(!isShared){
+        const editBtn = card.querySelector('.pin-edit-btn');
+        if(editBtn) editBtn.addEventListener('click',e=>{
+          e.stopPropagation();
+          document.getElementById('hist-panel').classList.remove('open');
+          openSheet({lat:pin.lat,lng:pin.lng},pin);
+        });
+      }
+      const navBtn = card.querySelector('.pin-nav-btn');
+      if(navBtn) navBtn.addEventListener('click', e=>{
+        e.stopPropagation();
+        openMapsNav(parseFloat(navBtn.dataset.lat), parseFloat(navBtn.dataset.lng), navBtn.dataset.addr);
+      });
+
+      if(pin.phone && !isShared){
+        const wrap = document.createElement('div'); wrap.className='pin-card-wrap';
+        const reveal = document.createElement('div'); reveal.className='pin-call-reveal'; reveal.textContent='📞';
+        reveal.addEventListener('click',()=>{ window.location.href='tel:'+pin.phone; wrap.classList.remove('swiped'); });
+        let tx=0;
+        wrap.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
+        wrap.addEventListener('touchend',e=>{
+          const dx=e.changedTouches[0].clientX-tx;
+          if(dx>50) wrap.classList.add('swiped');
+          else if(dx<-20) wrap.classList.remove('swiped');
+        },{passive:true});
+        wrap.appendChild(card); wrap.appendChild(reveal);
+        body.appendChild(wrap);
+      } else {
+        body.appendChild(card);
+      }
+    });
+  }
+}
+
+function initCoverageMap(){
+  // Size the container explicitly
+  const header = document.getElementById('hist-header');
+  const tabs   = document.getElementById('hist-tabs');
+  const wrap   = document.getElementById('coverage-wrap');
+  const h = window.innerHeight - (header ? header.offsetHeight : 0) - (tabs ? tabs.offsetHeight : 0);
+  wrap.style.height = h + 'px';
+  wrap.style.width  = '100%';
+
+  if(!coverageMapInit){
+    coverageMap = L.map('coverage-map', {zoomControl:true, attributionControl:false});
+    addSatTiles(coverageMap);
+    coverageMapInit = true;
+  }
+
+  // Clear old layers
+  coverageMap.eachLayer(l=>{ if(l instanceof L.Polyline || l instanceof L.Marker) coverageMap.removeLayer(l); });
+
+  const allCoords = [];
+
+  // My own routes — colored and faded by age
+  const now = Date.now();
+  const cutoff = new Date(now - covDays * 86400000).toISOString();
+  sessions
+    .filter(s => !covDays || covDays >= 9999 || (s.started_at >= cutoff))
+    .forEach(s=>{
+      if(s.coords && s.coords.length > 1){
+        const lls = s.coords.map(c=>[c.lat,c.lng]);
+        const ageDays = (now - new Date(s.started_at)) / 86400000;
+        // Color: fresh=orange, medium=yellow, old=grey
+        let color, opacity;
+        if(ageDays <= 30)      { color='#f5a623'; opacity=.95; }
+        else if(ageDays <= 90) { color='#a87a1a'; opacity=.6; }
+        else                   { color='#555'; opacity=.4; }
+        L.polyline(lls, {color, weight:4, opacity}).addTo(coverageMap);
+        lls.forEach(ll=>allCoords.push(ll));
+      }
+    });
+
+  // Age legend
+  const existingLegend = coverageMap.getContainer().querySelector('.cov-age-legend');
+  if(!existingLegend){
+    const legendDiv = document.createElement('div');
+    legendDiv.className='cov-age-legend';
+    legendDiv.style.cssText='position:absolute;bottom:40px;right:12px;z-index:1000;background:rgba(0,0,0,.82);border-radius:10px;padding:8px 12px;font-size:11px;border:1px solid rgba(255,255,255,.1)';
+    legendDiv.innerHTML=`
+      <div style="font-size:10px;color:#888;font-weight:800;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Route Age</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><div style="width:24px;height:3px;background:#f5a623;border-radius:2px"></div><span style="color:#ccc">0–30 days</span></div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><div style="width:24px;height:3px;background:#a87a1a;border-radius:2px"></div><span style="color:#ccc">30–90 days</span></div>
+      <div style="display:flex;align-items:center;gap:6px"><div style="width:24px;height:3px;background:#555;border-radius:2px"></div><span style="color:#ccc">90+ days</span></div>
+    `;
+    coverageMap.getContainer().appendChild(legendDiv);
+  }
+
+  // Shared/imported routes — dashed in different colors
+  importedRoutes.forEach((r,i)=>{
+    if(r.coords && r.coords.length > 1){
+      const color = SHARED_COLORS[i % SHARED_COLORS.length];
+      const lls = r.coords.map(c=>[c.lat,c.lng]);
+      L.polyline(lls, {color, weight:4, opacity:.8, dashArray:'8,4'}).addTo(coverageMap);
+      lls.forEach(ll=>allCoords.push(ll));
+
+    }
+  });
+
+  // My pins
+  pins.forEach(pin=>{
+    const c = STATUS_COLORS[pin.status]||'#f5a623';
+    let iconHtml, iconSize, iconAnchor;
+    if(pin.photo){
+      iconHtml=`<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none"><div style="width:44px;height:44px;border-radius:50%;border:3px solid ${c};background:url('${pin.photo}') center/cover;box-shadow:0 3px 10px rgba(0,0,0,.7)"></div><div style="width:3px;height:8px;background:${c};margin-top:-1px"></div><div style="width:7px;height:7px;border-radius:50%;background:${c};margin-top:-2px"></div></div>`;
+      iconSize=[44,62]; iconAnchor=[22,62];
+    } else {
+      iconHtml=`<div class="pin-drop" style="background:${c}"></div>`;
+      iconSize=[14,14]; iconAnchor=[7,14];
+    }
+    L.marker([pin.lat,pin.lng], {icon:L.divIcon({html:iconHtml,iconSize,iconAnchor,className:''})})
+      .on('click',()=>{ document.getElementById('hist-panel').classList.remove('open'); setTimeout(()=>openDetail(pin.id),200); })
+      .addTo(coverageMap);
+  });
+
+  if(allCoords.length > 0) coverageMap.fitBounds(L.latLngBounds(allCoords),{padding:[40,40]});
+  else coverageMap.setView([38.85,-76.53],13);
+
+  setTimeout(()=>coverageMap.invalidateSize(), 150);
+}
+
+
+async function reverseGeocode(lat,lng){
+  try{
+    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,{headers:{'Accept-Language':'en'}});
+    const d=await r.json();const a=d.address||{};
+    const parts=[a.house_number&&a.road?`${a.house_number} ${a.road}`:a.road,a.city||a.town||a.village||a.county].filter(Boolean);
+    return parts.join(', ')||'Unknown location';
+  }catch(e){return 'Unknown location';}
+}
+
+// Follow button
+function showFollowBtn(show){
+  document.getElementById('follow-btn').classList.toggle('show', show);
+}
+document.getElementById('follow-btn').addEventListener('click',()=>{
+  followMode=true;
+  showFollowBtn(false);
+  if(youMarker){
+    const ll=youMarker.getLatLng();
+    map.setView([ll.lat,ll.lng],map.getZoom(),{animate:true});
+  }
+});
+
+initAuth();
+
+// ── PWA Service Worker + Install Prompt ──────────────────────────
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => console.log('SW registered'))
+      .catch(err => console.log('SW failed:', err));
+  });
+}
+
+// Android install prompt
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  // Show install banner after 30 seconds if not already installed
+  setTimeout(showInstallBanner, 30000);
+});
+
+function showInstallBanner(){
+  if(!deferredInstallPrompt) return;
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;bottom:96px;left:12px;right:12px;z-index:9999;background:#161616;border:1px solid #f5a623;border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:12px';
+  banner.innerHTML = `
+    <img src="/icon-192.png" style="width:40px;height:40px;border-radius:10px;flex-shrink:0"/>
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:800">Install CanvassTrack</div>
+      <div style="font-size:12px;color:#555;margin-top:2px">Add to home screen for the best experience</div>
+    </div>
+    <button id="pwa-install-btn" style="padding:8px 14px;background:#f5a623;color:#000;border:none;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer;flex-shrink:0">Install</button>
+    <button id="pwa-dismiss-btn" style="background:none;border:none;color:#444;font-size:18px;cursor:pointer;padding:4px">✕</button>
+  `;
+  document.body.appendChild(banner);
+  banner.querySelector('#pwa-install-btn').addEventListener('click', async () => {
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    if(outcome === 'accepted') toast('CanvassTrack installed!');
+    deferredInstallPrompt = null;
+    banner.remove();
+  });
+  banner.querySelector('#pwa-dismiss-btn').addEventListener('click', () => banner.remove());
+}
+
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 // CanvassTrack Service Worker
-const CACHE = 'canvasstrack-v3';
+const CACHE = 'canvasstrack-v5';
 
 // Cache the app shell on install
 self.addEventListener('install', e => {

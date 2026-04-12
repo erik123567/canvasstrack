@@ -597,7 +597,8 @@ body.tracking #pinBtn.show { display: flex !important; }
 /* ── Map status filter ── */
 #map-filter {
   position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
-  z-index: 200; display: none; gap: 6px; flex-wrap: nowrap;
+  z-index: 200; display: none; gap: 6px; flex-wrap: wrap; justify-content: center;
+  max-width: 340px;
   background: rgba(0,0,0,.82); backdrop-filter: blur(10px);
   padding: 8px 10px; border-radius: 30px;
   border: 1px solid rgba(255,255,255,.1);
@@ -975,6 +976,7 @@ body.tracking #pinBtn.show { display: flex !important; }
   <button class="filt-btn active" data-status="Spoke to Owner" style="color:#4a9eff;border-color:#4a9eff">Spoke</button>
   <button class="filt-btn active" data-status="Interested" style="color:#00c9a7;border-color:#00c9a7">Interest</button>
   <button class="filt-btn active" data-status="Appointment" style="color:#a855f7;border-color:#a855f7">Appt</button>
+  <button class="filt-btn" id="filt-horizon" style="color:#f5a623;border-color:#f5a623;opacity:.5">🏠 Horizon</button>
 </div>
 
 
@@ -2890,10 +2892,19 @@ function exportPinsCSV() {
 
 // ── Map status filter ─────────────────────────────────────────────
 let activeFilters = new Set(['all','Dropped Lit','No Answer','Spoke to Owner','Interested','Appointment']);
+let horizonFilterActive = false;
 
 document.getElementById('filterBtn').addEventListener('click',()=>{
   const bar = document.getElementById('map-filter');
   bar.classList.toggle('show');
+});
+
+document.getElementById('filt-horizon').addEventListener('click', () => {
+  horizonFilterActive = !horizonFilterActive;
+  const btn = document.getElementById('filt-horizon');
+  btn.style.opacity = horizonFilterActive ? '1' : '.5';
+  btn.classList.toggle('active', horizonFilterActive);
+  applyFilter();
 });
 
 document.querySelectorAll('.filt-btn').forEach(btn=>{
@@ -2925,9 +2936,16 @@ function applyFilter(){
     const pin = [...pins, ...importedPins][idx];
     if(!pin) return;
     const status = pin.status || 'Dropped Lit';
-    const visible = activeFilters.has('all') || activeFilters.has(status);
-    if(visible){ if(!map.hasLayer(marker)) marker.addTo(map); }
-    else { if(map.hasLayer(marker)) map.removeLayer(marker); }
+    const statusOk = activeFilters.has('all') || activeFilters.has(status);
+    const horizonOk = !horizonFilterActive || !!pin.horizon_shingle;
+    const visible = statusOk && horizonOk;
+    if(pinClusterGroup) {
+      if(visible && !pinClusterGroup.hasLayer(marker)) pinClusterGroup.addLayer(marker);
+      else if(!visible && pinClusterGroup.hasLayer(marker)) pinClusterGroup.removeLayer(marker);
+    } else {
+      if(visible){ if(!map.hasLayer(marker)) marker.addTo(map); }
+      else { if(map.hasLayer(marker)) map.removeLayer(marker); }
+    }
   });
 }
 

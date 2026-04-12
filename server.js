@@ -462,25 +462,54 @@ app.get('/api/stats', requireAuth, (req, res) => {
       return acc;
     }, {});
 
-    // ── Daily breakdown for chart (last 30 days) ──
+    // ── Daily breakdown — 90 days ──
+    const ninetyAgo = new Date(now - 90 * 86400000).toISOString().split('T')[0];
     const dailyMap = {};
-    for (let d = 29; d >= 0; d--) {
+    for (let d = 89; d >= 0; d--) {
       const dt = new Date(now - d * 86400000).toISOString().split('T')[0];
-      dailyMap[dt] = { date: dt, pins: 0, interested: 0, appointments: 0, routes: 0 };
+      dailyMap[dt] = { date: dt, pins: 0, interested: 0, appointments: 0, spoke: 0, dropped: 0, routes: 0 };
     }
-    pins.filter(p => toDate(p.created_at) >= monthAgo).forEach(p => {
+    pins.filter(p => toDate(p.created_at) >= ninetyAgo).forEach(p => {
       const d = toDate(p.created_at);
       if (dailyMap[d]) {
         dailyMap[d].pins++;
-        if (p.status === 'Interested')   dailyMap[d].interested++;
-        if (p.status === 'Appointment')  dailyMap[d].appointments++;
+        if (p.status === 'Interested')    dailyMap[d].interested++;
+        if (p.status === 'Appointment')   dailyMap[d].appointments++;
+        if (p.status === 'Spoke to Owner') dailyMap[d].spoke++;
+        if (p.status === 'Dropped Lit')   dailyMap[d].dropped++;
       }
     });
-    sessions.filter(s => toDate(s.started_at) >= monthAgo).forEach(s => {
+    sessions.filter(s => toDate(s.started_at) >= ninetyAgo).forEach(s => {
       const d = toDate(s.started_at);
       if (dailyMap[d]) dailyMap[d].routes++;
     });
     const daily = Object.values(dailyMap);
+
+    // ── Weekly breakdown — last 12 weeks ──
+    const weeklyMap = {};
+    for (let w = 11; w >= 0; w--) {
+      const weekStart = new Date(now - (w * 7 + now.getDay()) * 86400000);
+      const wk = weekStart.toISOString().split('T')[0];
+      weeklyMap[wk] = { week: wk, pins: 0, interested: 0, appointments: 0, routes: 0 };
+    }
+    const getWeekStart = d => {
+      const dt = new Date(d);
+      dt.setDate(dt.getDate() - dt.getDay());
+      return dt.toISOString().split('T')[0];
+    };
+    pins.forEach(p => {
+      const wk = getWeekStart(p.created_at);
+      if (weeklyMap[wk]) {
+        weeklyMap[wk].pins++;
+        if (p.status === 'Interested')  weeklyMap[wk].interested++;
+        if (p.status === 'Appointment') weeklyMap[wk].appointments++;
+      }
+    });
+    sessions.forEach(s => {
+      const wk = getWeekStart(s.started_at);
+      if (weeklyMap[wk]) weeklyMap[wk].routes++;
+    });
+    const weekly = Object.values(weeklyMap);
 
     // ── Conversion rate ──
     const convRate = arr => {
@@ -528,7 +557,8 @@ app.get('/api/stats', requireAuth, (req, res) => {
         bestDay:  bestDay ? { date: bestDay[0], count: bestDay[1] } : null,
       },
       followUps: { overdue, dueToday, upcoming },
-      daily, // 30-day breakdown for chart
+      daily,   // 90-day daily breakdown
+      weekly,  // 12-week breakdown
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

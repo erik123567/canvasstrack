@@ -835,7 +835,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 
 #pin-confirm-bar {
   position: fixed;
-  bottom: 90px; left: 16px; right: 16px;
+  top: 16px; left: 16px; right: 16px;
   z-index: 9000;
   display: none;
   gap: 10px;
@@ -843,13 +843,13 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 }
 #pin-confirm-bar.active { display: flex; }
 #pin-confirm-btn {
-  flex: 1; padding: 18px; border: none; border-radius: 14px;
+  flex: 1; padding: 16px; border: none; border-radius: 14px;
   background: #f5a623; color: #000;
-  font-size: 17px; font-weight: 900; letter-spacing: .5px;
+  font-size: 18px; font-weight: 900; letter-spacing: .5px;
   cursor: pointer; transition: transform .1s;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  min-height: 64px;
+  min-height: 58px;
 }
 #pin-confirm-btn:active { transform: scale(.97); background: #e09510; }
 #pin-cancel-btn {
@@ -974,8 +974,8 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 
 <!-- Pin drop confirm bar -->
 <div id="pin-confirm-bar">
-  <button id="pin-cancel-btn">✕</button>
-  <button id="pin-confirm-btn">📍 Log this stop</button>
+  <button id="pin-cancel-btn" style="min-height:58px">✕</button>
+  <button id="pin-confirm-btn">✅ LOG STOP</button>
 </div>
 
 <div id="bottom">
@@ -3079,7 +3079,7 @@ function enterDropMode(){
   document.getElementById('pinBtn').style.color = '#000';
   document.getElementById('pinBtn').textContent = '📍';
   followMode = false; // pause auto-follow so map stays still
-  toast('Move map so ✛ is on the house → tap Log', 3500);
+  toast('Move map → ✛ on house → tap LOG', 3500);
 }
 
 function exitDropMode(){

@@ -836,7 +836,7 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 #pin-confirm-bar {
   position: fixed;
   bottom: 90px; left: 16px; right: 16px;
-  z-index: 600;
+  z-index: 9000;
   display: none;
   gap: 10px;
   touch-action: manipulation;
@@ -3079,7 +3079,7 @@ function enterDropMode(){
   document.getElementById('pinBtn').style.color = '#000';
   document.getElementById('pinBtn').textContent = '📍';
   followMode = false; // pause auto-follow so map stays still
-  toast('Drag map to the house, then tap Log', 3500);
+  toast('Move map so ✛ is on the house → tap Log', 3500);
 }
 
 function exitDropMode(){

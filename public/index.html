@@ -124,6 +124,12 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 #pinBtn { display: none; }
 #pinBtn.show { display: flex; }
 
+/* ── Tracking mode: hide non-essential bottom buttons ── */
+body.tracking #settingsBtn,
+body.tracking #stormBtn,
+body.tracking #filterBtn { display: none !important; }
+body.tracking #pinBtn.show { display: flex !important; }
+
 /* ── History Panel ── */
 #hist-panel {
   position: fixed; inset: 0; z-index: 400;
@@ -1660,7 +1666,8 @@ function startT(){
     followMode=true;
     document.getElementById('trackBtn').disabled=false;
     requestWakeLock();
-    toast('Tracking • screen will stay on for GPS accuracy');
+    document.body.classList.add('tracking');
+    toast('Tracking • tap 📍 to log a stop');
   },err=>{
     const m={1:'Location denied — Settings → Privacy → Location Services',2:'GPS unavailable',3:'GPS timed out'};
     document.getElementById('trackBtn').textContent='▶ Start Tracking';
@@ -1715,6 +1722,7 @@ async function stopT(){
   document.getElementById('timer').classList.remove('show');
   document.getElementById('timer').textContent='';
   document.getElementById('pinBtn').classList.remove('show');
+  document.body.classList.remove('tracking');
   followMode=true; showFollowBtn(false);
   releaseWakeLock();
 }

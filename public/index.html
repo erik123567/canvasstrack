@@ -2147,6 +2147,48 @@ function renderStats() {
   }
 
   const p = statsData[statsPeriod] || {};
+  const statuses = p.statuses || {};
+  const totalPins = p.pins || 0;
+  const fu = statsData.followUps || {};
+  const convRate = p.convRate || (totalPins > 0 ? Math.round(((statuses['Interested']||0)+(statuses['Appointment']||0))/totalPins*100) : 0);
+  const convColor = convRate >= 20 ? '#00c9a7' : convRate >= 10 ? '#f5a623' : '#fff';
+
+  // ── Summary cards ──
+  cardsEl.innerHTML = `
+    <div class="stat-card"><div class="stat-card-val">${totalPins}</div><div class="stat-card-lbl">Touch Points</div></div>
+    <div class="stat-card"><div class="stat-card-val" style="color:${convColor}">${convRate}%</div><div class="stat-card-lbl">Conv. Rate</div></div>
+    ${p.routes !== undefined ? `<div class="stat-card"><div class="stat-card-val">${p.routes}</div><div class="stat-card-lbl">Routes</div></div>` : ''}
+  `;
+
+  // ── Draw chart ──
+  drawStatsChart();
+
+  // ── Status breakdown ──
+  const statusColors = {'Appointment':'#a855f7','Interested':'#00c9a7','Spoke to Owner':'#4a9eff','Dropped Lit':'#f5a623','No Answer':'#555'};
+  const statusBars = ['Appointment','Interested','Spoke to Owner','Dropped Lit','No Answer'].map(s => {
+    const count = statuses[s]||0;
+    const pct = totalPins > 0 ? Math.round((count/totalPins)*100) : 0;
+    const color = statusColors[s]||'#444';
+    return `<div class="status-bar-row">
+      <div class="status-bar-label"><span style="color:${color};font-weight:700">${s}</span><span style="color:#555">${count} (${pct}%)</span></div>
+      <div class="status-bar-track"><div class="status-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+    </div>`;
+  }).join('');
+
+  bottomEl.innerHTML = `
+    <div class="stats-section-label">Status Breakdown</div>
+    <div style="background:#161616;border:1px solid #222;border-radius:14px;padding:14px;margin-bottom:16px">
+      ${totalPins > 0 ? statusBars : '<div style="color:#333;font-size:13px;text-align:center;padding:12px">No pins this period</div>'}
+    </div>
+    <div class="stats-section-label">Follow-Ups</div>
+    <div style="background:#161616;border:1px solid #222;border-radius:14px;padding:4px 14px;margin-bottom:60px">
+      <div class="followup-row"><span style="color:#e03b3b;font-weight:700">⚠️ Overdue</span><span style="color:#e03b3b;font-weight:800">${fu.overdue||0}</span></div>
+      <div class="followup-row"><span style="color:#f5a623;font-weight:700">🔴 Due Today</span><span style="color:#f5a623;font-weight:800">${fu.dueToday||0}</span></div>
+      <div class="followup-row"><span style="color:#555">📅 Upcoming</span><span style="color:#555;font-weight:800">${fu.upcoming||0}</span></div>
+    </div>
+  `;
+}
+
 // ── Storms Tab ────────────────────────────────────────────────────
 let stormsMap = null, stormsMapInit = false;
 let stormTabDays = 365, stormTabTypes = new Set(['hail','wind','tornado']);
@@ -3634,7 +3676,6 @@ function showInstallBanner(){
     banner.remove();
   });
   banner.querySelector('#pwa-dismiss-btn').addEventListener('click', () => banner.remove());
-}
 }
 
 </script>

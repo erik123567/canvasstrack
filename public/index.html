@@ -3233,6 +3233,10 @@ document.getElementById('sheet-bg').addEventListener('click',e=>{
 });
 
 document.getElementById('bsave').addEventListener('click',async()=>{
+  const btn = document.getElementById('bsave');
+  if(btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
   const rawAddr=document.getElementById('saddr-input').value.trim();
   const addr=(rawAddr==='Getting address…'||rawAddr==='Getting address...')?'':rawAddr;
   const notes=document.getElementById('notes').value.trim();
@@ -3244,6 +3248,7 @@ document.getElementById('bsave').addEventListener('click',async()=>{
   const followup_date=document.getElementById('followup-input').value||null;
   const horizon_shingle=horizonShingle?1:0;
 
+  try {
   if(editingPin){
     // UPDATE existing pin
     const updated={...editingPin,address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,horizon_shingle};
@@ -3289,6 +3294,10 @@ document.getElementById('bsave').addEventListener('click',async()=>{
     }
   }
 
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
   document.getElementById('sheet-bg').classList.remove('open');
   pendingLL=null;pendingPhoto=null;editingPin=null;
 });

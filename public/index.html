@@ -3576,12 +3576,34 @@ function renderHistTab(tab){
       return 0;
     });
 
-    if(!pPins.length){
+    // Also show unassigned Interested/Appointment pins as "New Leads"
+    const newLeads = pins.filter(p => !p.pipeline_stage && (p.status === 'Interested' || p.status === 'Appointment'));
+
+    if(!pPins.length && !newLeads.length){
       body.innerHTML=`<div style="text-align:center;padding:40px;color:#333;font-size:13px">
         No pipeline leads yet.<br><br>
-        <span style="color:#555">Open a pin with status <b style="color:#00c9a7">Interested</b> or <b style="color:#a855f7">Appointment</b><br>and assign a pipeline stage.</span>
+        <span style="color:#555">Mark a pin as <b style="color:#00c9a7">Interested</b> or <b style="color:#a855f7">Appointment</b>,<br>then open it and select a pipeline stage.</span>
       </div>`;
       return;
+    }
+
+    // Show unassigned Interested/Appointment pins first as "New Leads"
+    let html = '';
+    if(newLeads.length) {
+      html += `<div class="pipeline-group-header">⭐ New Leads — assign a stage (${newLeads.length})</div>`;
+      newLeads.forEach(pin => {
+        html += `<div class="pipeline-card" onclick="openPipelinePin('${pin.id}')">
+          <div class="pipeline-card-header">
+            <div class="pipeline-card-addr">${pin.address||'Unknown address'}</div>
+            <div class="pipeline-stage-badge" style="background:${pin.status==='Interested'?'#00c9a722':'#a855f722'};color:${pin.status==='Interested'?'#00c9a7':'#a855f7'};border:1px solid ${pin.status==='Interested'?'#00c9a744':'#a855f744'}">${pin.status}</div>
+          </div>
+          <div class="pipeline-card-meta">
+            ${pin.owner_name?`<span>👤 ${pin.owner_name}</span>`:''}
+            ${pin.phone?`<span>📞 ${pin.phone}</span>`:''}
+            <span style="color:#555;font-size:11px">Tap to assign pipeline stage</span>
+          </div>
+        </div>`;
+      });
     }
 
     // Group by stage
@@ -3589,7 +3611,6 @@ function renderHistTab(tab){
     PIPELINE_STAGES.forEach(s=>{ grouped[s.id]=[]; });
     pPins.forEach(p=>{ if(grouped[p.pipeline_stage]) grouped[p.pipeline_stage].push(p); });
 
-    let html = '';
     PIPELINE_STAGES.forEach(stage=>{
       const group = grouped[stage.id]||[];
       if(!group.length) return;

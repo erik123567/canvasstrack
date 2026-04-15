@@ -888,6 +888,69 @@ body.tracking #pinBtn.show { display: flex !important; }
 .leaflet-popup-content-wrapper { background:#161616; color:#fff; border-radius:12px; border:1px solid #252525; box-shadow:0 6px 24px rgba(0,0,0,.7); }
 .leaflet-popup-tip { background:#161616; }
 .leaflet-popup-content { margin:12px 14px; font-family:-apple-system,sans-serif; }
+
+/* ── Pipeline toggle button ── */
+#pipelineToggleBtn {
+  position: fixed; top: 10px; right: 56px;
+  background: rgba(0,0,0,.7); border: 1.5px solid #2a2a2a;
+  color: #888; font-size: 11px; font-weight: 800; letter-spacing: .5px;
+  padding: 5px 10px; border-radius: 20px; cursor: pointer; z-index: 300;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+
+/* ── Pipeline stage buttons in pin sheet ── */
+.pipeline-stage-wrap {
+  margin-bottom: 14px;
+}
+.pipeline-stage-label {
+  font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  color: #444; margin-bottom: 8px;
+}
+.pipeline-stages {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.pipeline-stage-btn {
+  padding: 8px 12px; border-radius: 20px; font-size: 12px; font-weight: 800;
+  border: 1.5px solid #252525; cursor: pointer; background: transparent;
+  color: #444; -webkit-tap-highlight-color: transparent; transition: all .15s;
+}
+.pipeline-stage-btn.active {
+  border-color: var(--stage-color, #f5a623);
+  color: var(--stage-color, #f5a623);
+  background: rgba(255,255,255,.04);
+}
+
+/* ── Pipeline extra fields ── */
+.pipeline-extra-fields { margin-top: 10px; }
+
+/* ── Pipeline tab in history ── */
+.pipeline-card {
+  background: #111; border: 1px solid #1c1c1c; border-radius: 14px;
+  padding: 14px; margin-bottom: 10px; cursor: pointer;
+}
+.pipeline-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+}
+.pipeline-card-addr {
+  font-size: 14px; font-weight: 700; color: #fff; flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pipeline-stage-badge {
+  font-size: 11px; font-weight: 800; padding: 3px 9px;
+  border-radius: 20px; white-space: nowrap; flex-shrink: 0;
+}
+.pipeline-card-meta {
+  font-size: 12px; color: #444; display: flex; gap: 12px; flex-wrap: wrap;
+}
+.pipeline-group-header {
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: #333; margin: 16px 0 8px; font-weight: 800;
+}
+
+/* ── Pipeline mode map filter ── */
+body.pipeline-mode .leaflet-marker-icon:not(.pipeline-pin) { opacity: 0.15; }
+
 </style>
 </head>
 <body>
@@ -939,6 +1002,7 @@ body.tracking #pinBtn.show { display: flex !important; }
 
 <div id="offline-banner">📵 No signal — tracking locally, will sync when connected</div>
 <div id="sync-badge">⟳ Syncing…</div>
+<button id="pipelineToggleBtn" onclick="togglePipelineMode()">📊 Pipeline</button>
 <div id="map"></div>
 <div id="loading-overlay" style="position:fixed;inset:0;z-index:999;background:#0a0a0a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
   <div class="auth-logo">Canvass<span>Track</span></div>
@@ -948,6 +1012,7 @@ body.tracking #pinBtn.show { display: flex !important; }
   <div class="logo">Canvass<span>Track</span></div>
   <div id="dot"></div>
   <div id="timer"></div>
+  <span id="user-name-badge"></span>
 </div>
 <div id="toast"></div>
 
@@ -1139,6 +1204,7 @@ body.tracking #pinBtn.show { display: flex !important; }
     <div class="htab" data-tab="pins">Pins</div>
     <div class="htab" data-tab="coverage">Coverage</div>
     <div class="htab" data-tab="storms">⛈️</div>
+    <div class="htab" data-tab="pipeline">📊</div>
   </div>
 <div id="pin-search-wrap" style="padding:10px 16px 0;flex-shrink:0;display:none">
   <input id="pin-search" type="text" placeholder="🔍  Search address, name, notes…" style="width:100%;background:#1a1a1a;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:11px 14px;outline:none"/>
@@ -1265,6 +1331,14 @@ body.tracking #pinBtn.show { display: flex !important; }
     <textarea id="notes" placeholder="Roof age, damage, owner info…"></textarea>
 
     <!-- Collapsible details section -->
+
+    <!-- Pipeline Stage -->
+    <div class="pipeline-stage-wrap" id="pipeline-section" style="display:none">
+      <div class="pipeline-stage-label">Pipeline Stage</div>
+      <div class="pipeline-stages" id="pipeline-stage-buttons"></div>
+      <div class="pipeline-extra-fields" id="pipeline-extra-fields"></div>
+    </div>
+
     <button id="sheet-more-btn" style="width:100%;padding:11px;background:#1a1a1a;border:1px solid #252525;border-radius:11px;color:#555;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:6px">
       <span id="sheet-more-icon">▼</span> More Details
     </button>
@@ -1349,6 +1423,8 @@ let followMode=true; // auto-center map on user while tracking
 let _mapFitted=false;
 let dropMode=false;
 let horizonShingle=false;
+let pipelineMode=false;
+let _activePipelineStage=null;
 let pinClusterGroup=null; // auto-fit map to data on first load
 
 // Map
@@ -1454,7 +1530,9 @@ function renderAll(){
 }
 
 function drawPin(pin){
-  const c=STATUS_COLORS[pin.status]||'#f5a623';
+  // Use pipeline color if in pipeline mode and pin has pipeline stage
+  const pStage = pipelineMode && pin.pipeline_stage ? getPipelineStage(pin.pipeline_stage) : null;
+  const c = pStage ? pStage.color : (STATUS_COLORS[pin.status]||'#f5a623');
   const hasRealPhoto = pin.photo && pin.photo.length > 1000 && !pin.photo.includes('__THUMB__');
   let iconHtml, iconSize, iconAnchor;
   if(hasRealPhoto){
@@ -2188,6 +2266,106 @@ function renderStats() {
       <div class="followup-row"><span style="color:#555">📅 Upcoming</span><span style="color:#555;font-weight:800">${fu.upcoming||0}</span></div>
     </div>
   `;
+}
+
+
+
+// ── Pipeline sheet functions ───────────────────────────────────────
+
+function selectPipelineStage(stageId) {
+  // Toggle off if same stage clicked
+  _activePipelineStage = _activePipelineStage === stageId ? null : stageId;
+  // Update button active states
+  document.querySelectorAll('.pipeline-stage-btn').forEach(btn => {
+    const active = btn.dataset.stage === _activePipelineStage;
+    btn.classList.toggle('active', active);
+  });
+  renderPipelineExtraFields(_activePipelineStage, editingPin);
+  // Keep a hidden input for save to read
+  let inp = document.getElementById('pipeline-stage-select');
+  if(!inp) {
+    inp = document.createElement('input');
+    inp.type = 'hidden'; inp.id = 'pipeline-stage-select';
+    document.getElementById('pipeline-section').appendChild(inp);
+  }
+  inp.value = _activePipelineStage || '';
+}
+
+function renderPipelineExtraFields(stageId, pin) {
+  _activePipelineStage = stageId || null;
+  const wrap = document.getElementById('pipeline-extra-fields');
+  if(!wrap) return;
+  if(!stageId) { wrap.innerHTML = ''; return; }
+
+  const fields = [];
+
+  if(['contingency','claim_filed','adjuster','approved','job_scheduled','complete'].includes(stageId)) {
+    fields.push(`
+      <div class="field-label" style="margin-top:10px">Contingency Signed Date</div>
+      <input type="date" id="contingency-date-input" 
+        style="width:100%;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;color-scheme:dark;box-sizing:border-box;margin-bottom:10px"
+        value="${pin?.contingency_date||''}"/>`);
+  }
+  if(['claim_filed','adjuster','approved','job_scheduled','complete'].includes(stageId)) {
+    fields.push(`
+      <div class="field-label">Claim Number</div>
+      <input type="text" id="claim-number-input" placeholder="Claim #" 
+        style="width:100%;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;box-sizing:border-box;margin-bottom:10px"
+        value="${pin?.claim_number||''}"/>`);
+  }
+  if(['adjuster','approved','job_scheduled','complete'].includes(stageId)) {
+    fields.push(`
+      <div class="field-label">Adjuster Name</div>
+      <input type="text" id="adjuster-name-input" placeholder="Adjuster name" 
+        style="width:100%;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;box-sizing:border-box;margin-bottom:10px"
+        value="${pin?.adjuster_name||''}"/>
+      <div class="field-label">Adjuster Meeting Date</div>
+      <input type="date" id="adjuster-date-input"
+        style="width:100%;background:#0d0d0d;border:1px solid #252525;border-radius:11px;color:#fff;font-family:inherit;font-size:16px;padding:12px 13px;outline:none;color-scheme:dark;box-sizing:border-box;margin-bottom:10px"
+        value="${pin?.adjuster_date||''}"/>`);
+  }
+
+  wrap.innerHTML = fields.join('');
+}
+
+
+function openPipelinePin(pinId) {
+  const pin = pins.find(p=>p.id===pinId);
+  if(!pin) return;
+  document.getElementById('hist-panel').classList.remove('open');
+  openSheet({lat:pin.lat, lng:pin.lng}, pin);
+}
+
+// ── Pipeline ──────────────────────────────────────────────────────
+const PIPELINE_STAGES = [
+  { id: 'contingency', label: 'Contingency', emoji: '🤝', color: '#FFD700' },
+  { id: 'claim_filed', label: 'Claim Filed',  emoji: '📋', color: '#4a9eff' },
+  { id: 'adjuster',    label: 'Adjuster Mtg', emoji: '🤵', color: '#f5a623' },
+  { id: 'approved',    label: 'Approved',     emoji: '✅', color: '#00c9a7' },
+  { id: 'job_scheduled',label:'Job Scheduled',emoji: '🔨', color: '#a855f7' },
+  { id: 'complete',    label: 'Complete',     emoji: '💰', color: '#555'    },
+];
+
+function getPipelineStage(id) {
+  return PIPELINE_STAGES.find(s => s.id === id) || null;
+}
+
+function togglePipelineMode() {
+  pipelineMode = !pipelineMode;
+  document.body.classList.toggle('pipeline-mode', pipelineMode);
+  const btn = document.getElementById('pipelineToggleBtn');
+  if(btn) {
+    btn.textContent = pipelineMode ? '🗺️ Canvass' : '📊 Pipeline';
+    btn.style.background = pipelineMode ? '#4a9eff22' : '';
+    btn.style.borderColor = pipelineMode ? '#4a9eff' : '';
+    btn.style.color = pipelineMode ? '#4a9eff' : '';
+  }
+  renderAll();
+  if(pipelineMode) {
+    // Auto-open pipeline tab
+    document.getElementById('hist-panel').classList.add('open');
+    renderHistTab('pipeline');
+  }
 }
 
 // ── Storms Tab ────────────────────────────────────────────────────
@@ -3210,6 +3388,31 @@ function openSheet(latlng, existingPin){
     });
   }
 
+  // ── Pipeline section ─────────────────────────────────────────
+  const pipelineSection = document.getElementById('pipeline-section');
+  const stagesContainer = document.getElementById('pipeline-stage-buttons');
+  const canvassStatuses = ['Interested','Appointment','Spoke to Owner'];
+  const showPipeline = existingPin && (existingPin.pipeline_stage || canvassStatuses.includes(existingPin.status));
+  pipelineSection.style.display = showPipeline ? 'block' : 'none';
+
+  if(showPipeline) {
+    _activePipelineStage = existingPin.pipeline_stage || null;
+    stagesContainer.innerHTML = PIPELINE_STAGES.map(stage => {
+      const active = existingPin.pipeline_stage === stage.id;
+      return `<button class="pipeline-stage-btn${active?' active':''}"
+        style="--stage-color:${stage.color}"
+        data-stage="${stage.id}"
+        onclick="selectPipelineStage('${stage.id}')"
+      >${stage.emoji} ${stage.label}</button>`;
+    }).join('');
+    renderPipelineExtraFields(existingPin.pipeline_stage, existingPin);
+  } else {
+    _activePipelineStage = null;
+    if(stagesContainer) stagesContainer.innerHTML = '';
+    const ef = document.getElementById('pipeline-extra-fields');
+    if(ef) ef.innerHTML = '';
+  }
+
   hideFloatingUI();
   document.getElementById('sheet-bg').classList.add('open');
 }
@@ -3248,13 +3451,18 @@ document.getElementById('bsave').addEventListener('click',async()=>{
   const phone=document.getElementById('phone-input').value.trim()||null;
   const followup_date=document.getElementById('followup-input').value||null;
   const horizon_shingle=horizonShingle?1:0;
+  const pipeline_stage = _activePipelineStage || null;
+  const adjuster_name = document.getElementById('adjuster-name-input')?.value?.trim() || null;
+  const adjuster_date = document.getElementById('adjuster-date-input')?.value || null;
+  const claim_number = document.getElementById('claim-number-input')?.value?.trim() || null;
+  const contingency_date = document.getElementById('contingency-date-input')?.value || null;
 
   try {
   if(editingPin){
     // UPDATE existing pin
-    const updated={...editingPin,address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,horizon_shingle};
+    const updated={...editingPin,address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,horizon_shingle,pipeline_stage,adjuster_name,adjuster_date,claim_number,contingency_date};
     try{
-      await api.patch('/api/pins/'+editingPin.id,{address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,horizon_shingle});
+      await api.patch('/api/pins/'+editingPin.id,{address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,horizon_shingle,pipeline_stage,adjuster_name,adjuster_date,claim_number,contingency_date});
       await saveDamagePhotos(editingPin.id);
       // Update local array
       const idx=pins.findIndex(p=>p.id===editingPin.id);
@@ -3271,6 +3479,7 @@ document.getElementById('bsave').addEventListener('click',async()=>{
     const pin={
       id:Date.now()+'',lat:pendingLL.lat,lng:pendingLL.lng,
       address:addr,status,notes,photo,owner_name,phone,followup_date,interaction_date,horizon_shingle,
+      pipeline_stage,adjuster_name,adjuster_date,claim_number,contingency_date,
       sessionId:curSession?curSession.id:null
     };
     if(!navigator.onLine){
@@ -3353,6 +3562,63 @@ function renderHistTab(tab){
   body.innerHTML='<div style="text-align:center;padding:40px;color:#2a2a2a;font-size:13px">Loading…</div>';
   const cov=document.getElementById('coverage-wrap');
   const stormsWrap = document.getElementById('storms-wrap');
+
+  if(tab==='pipeline'){
+    cov.style.display='none';
+    if(stormsWrap) stormsWrap.style.display='none';
+    // Get pipeline pins sorted by urgency
+    const pPins = pins.filter(p=>p.pipeline_stage).sort((a,b)=>{
+      const order = ['adjuster','contingency','claim_filed','approved','job_scheduled','complete'];
+      const ai = order.indexOf(a.pipeline_stage), bi = order.indexOf(b.pipeline_stage);
+      if(ai!==bi) return ai-bi;
+      // Sort by adjuster_date if same stage
+      if(a.adjuster_date && b.adjuster_date) return a.adjuster_date.localeCompare(b.adjuster_date);
+      return 0;
+    });
+
+    if(!pPins.length){
+      body.innerHTML=`<div style="text-align:center;padding:40px;color:#333;font-size:13px">
+        No pipeline leads yet.<br><br>
+        <span style="color:#555">Open a pin with status <b style="color:#00c9a7">Interested</b> or <b style="color:#a855f7">Appointment</b><br>and assign a pipeline stage.</span>
+      </div>`;
+      return;
+    }
+
+    // Group by stage
+    const grouped = {};
+    PIPELINE_STAGES.forEach(s=>{ grouped[s.id]=[]; });
+    pPins.forEach(p=>{ if(grouped[p.pipeline_stage]) grouped[p.pipeline_stage].push(p); });
+
+    let html = '';
+    PIPELINE_STAGES.forEach(stage=>{
+      const group = grouped[stage.id]||[];
+      if(!group.length) return;
+      html += `<div class="pipeline-group-header">${stage.emoji} ${stage.label} (${group.length})</div>`;
+      group.forEach(pin=>{
+        const today = new Date().toISOString().split('T')[0];
+        let urgency = '';
+        if(pin.adjuster_date){
+          if(pin.adjuster_date < today) urgency = `<span style="color:#e03b3b;font-size:11px">⚠️ Adj. meeting overdue</span>`;
+          else if(pin.adjuster_date === today) urgency = `<span style="color:#f5a623;font-size:11px">🔴 Adj. meeting TODAY</span>`;
+          else urgency = `<span style="color:#555;font-size:11px">🤵 ${pin.adjuster_date}</span>`;
+        }
+        html += `<div class="pipeline-card" onclick="openPipelinePin('${pin.id}')">
+          <div class="pipeline-card-header">
+            <div class="pipeline-card-addr">${pin.address||'Unknown address'}</div>
+            <div class="pipeline-stage-badge" style="background:${stage.color}22;color:${stage.color};border:1px solid ${stage.color}44">${stage.emoji} ${stage.label}</div>
+          </div>
+          <div class="pipeline-card-meta">
+            ${pin.owner_name?`<span>👤 ${pin.owner_name}</span>`:''}
+            ${pin.phone?`<span>📞 ${pin.phone}</span>`:''}
+            ${pin.claim_number?`<span>📋 ${pin.claim_number}</span>`:''}
+            ${urgency}
+          </div>
+        </div>`;
+      });
+    });
+    body.innerHTML = html;
+    return;
+  }
 
   if(tab==='storms'){
     body.style.display='none';

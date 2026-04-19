@@ -127,7 +127,8 @@ html, body { height: 100%; background: #000; font-family: -apple-system, BlinkMa
 /* ── Tracking mode: hide non-essential bottom buttons ── */
 body.tracking #settingsBtn,
 body.tracking #stormBtn,
-body.tracking #filterBtn { display: none !important; }
+body.tracking #filterBtn,
+body.tracking #quickPinBtn { display: none !important; }
 body.drop-mode #bottom { display: none !important; }
 body.tracking #pinBtn.show { display: flex !important; }
 
@@ -1067,6 +1068,7 @@ body.pipeline-mode .leaflet-marker-icon:not(.pipeline-pin) { opacity: 0.15; }
 
 <div id="bottom">
   <button class="icon-btn" id="settingsBtn">⚙️</button>
+  <button class="icon-btn" id="quickPinBtn" title="Quick Pin">📍</button>
   <button id="trackBtn">▶ START TRACKING</button>
   <button class="icon-btn" id="historyBtn">📋</button>
   <button class="icon-btn" id="stormBtn" title="Storm data">⛈️</button>
@@ -3281,6 +3283,11 @@ document.getElementById('pinBtn').addEventListener('click',()=>{
   enterDropMode();
 });
 
+document.getElementById('quickPinBtn').addEventListener('click',()=>{
+  if(dropMode){ exitDropMode(); return; }
+  enterDropMode();
+});
+
 document.getElementById('pin-cancel-btn').addEventListener('click',()=>{
   exitDropMode();
   toast('Pin cancelled');
@@ -3667,9 +3674,25 @@ function renderHistTab(tab){
       const coords=s.coords||[];
       const pc=pins.filter(p=>p.session_id===s.id||p.sessionId===s.id).length;
       const card=document.createElement('div');card.className='route-card';
-      card.innerHTML=`<div class="route-swatch" style="background:${s.color||sCol(idx)}"></div><div class="route-info"><div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div><div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} pts · ${pc} pin${pc!==1?'s':''}</div></div><div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0"><button class="shr-btn" style="background:transparent;border:1px solid #f5a623;color:#f5a623;border-radius:8px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer;min-height:44px">Share</button><button class="snap-btn" data-id="${s.id}" style="background:transparent;border:1px solid #00c9a7;color:#00c9a7;border-radius:8px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer;min-height:44px">↺ Re-snap</button></div>`;
+      card.innerHTML=`<div class="route-swatch" style="background:${s.color||sCol(idx)}"></div><div class="route-info"><div class="route-date">${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div><div class="route-meta">${d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · ${coords.length} pts · ${pc} pin${pc!==1?'s':''}</div></div><div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0"><button class="shr-btn" style="background:transparent;border:1px solid #f5a623;color:#f5a623;border-radius:8px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer;min-height:44px">Share</button><button class="snap-btn" data-id="${s.id}" style="background:transparent;border:1px solid #00c9a7;color:#00c9a7;border-radius:8px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer;min-height:44px">↺ Re-snap</button><button class="del-route-btn" data-id="${s.id}" style="background:transparent;border:1px solid #e03b3b;color:#e03b3b;border-radius:8px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer;min-height:44px">🗑️ Delete</button></div>`;
       card.querySelector('.shr-btn').addEventListener('click',e=>{ e.stopPropagation(); shareSession(s.id); });
       card.querySelector('.snap-btn').addEventListener('click',e=>{ e.stopPropagation(); snapRoute(s.id, card); });
+      card.querySelector('.del-route-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        const pinCount = pins.filter(p=>p.session_id===s.id||p.sessionId===s.id).length;
+        const msg = pinCount > 0
+          ? `Delete this route? It has ${pinCount} pin${pinCount!==1?'s':''} — they will stay on the map.`
+          : 'Delete this route?';
+        showConfirm(msg, async () => {
+          try {
+            await api.del('/api/sessions/' + s.id);
+            sessions = sessions.filter(x => x.id !== s.id);
+            renderAll();
+            renderHistTab('routes');
+            toast('Route deleted');
+          } catch(e) { toast('Could not delete route', 3000); }
+        });
+      });
       card.addEventListener('click',()=>{
         document.getElementById('hist-panel').classList.remove('open');
         if(coords.length>1)map.fitBounds(L.latLngBounds(coords.map(c=>[c.lat,c.lng])),{padding:[40,40]});

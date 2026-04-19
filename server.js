@@ -426,7 +426,7 @@ function bboxOverlapsRegion(geometry) {
 }
 
 async function fetchOutlookDay(layerId, dayLabel) {
-  const url = `https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/${layerId}/query?f=geojson&where=1%3D1&outFields=LABEL,LABEL2,FILL,STROKE,DN&returnGeometry=true`;
+  const url = `https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/${layerId}/query?f=geojson&where=1%3D1&outFields=label,label2,fill,stroke,dn&returnGeometry=true`;
   try {
     const data = await fetchJSON(url);
     if(!data.features) return [];
@@ -435,10 +435,10 @@ async function fetchOutlookDay(layerId, dayLabel) {
       .filter(f => f.geometry && bboxOverlapsRegion(f.geometry))
       .map(f => ({
         day: dayLabel,
-        risk: f.properties.LABEL2 || f.properties.LABEL || 'Unknown',
-        riskCode: f.properties.LABEL || '',
-        fill: f.properties.FILL || '#888888',
-        dn: f.properties.DN || 0,
+        risk: f.properties.label2 || f.properties.label || 'Unknown',
+        riskCode: f.properties.label || '',
+        fill: f.properties.fill || '#888888',
+        dn: f.properties.dn || 0,
       }));
   } catch(e) {
     console.warn(`Outlook ${dayLabel} fetch failed:`, e.message);

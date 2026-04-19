@@ -142,7 +142,9 @@ const updatePin = db.prepare(`
   UPDATE pins SET address = ?, status = ?, notes = ?, photo = ?, owner_name = ?, phone = ?, followup_date = ?, interaction_date = ?, horizon_shingle = ?, pipeline_stage = ?, adjuster_name = ?, adjuster_date = ?, claim_number = ?, contingency_date = ? WHERE id = ? AND user_id = ?
 `);
 const getUserPins = db.prepare(`SELECT * FROM pins WHERE user_id = ? ORDER BY created_at DESC`);
-const deletePin   = db.prepare(`DELETE FROM pins WHERE id = ? AND user_id = ?`);
+const deletePin       = db.prepare(`DELETE FROM pins WHERE id = ? AND user_id = ?`);
+const deleteSession   = db.prepare(`DELETE FROM sessions WHERE id = ? AND user_id = ?`);
+const deleteSessionCoords = db.prepare(`DELETE FROM coords WHERE session_id = ?`);
 
 // ── Shared Routes ─────────────────────────────────────────────────
 const createShareCode    = db.prepare(`INSERT OR REPLACE INTO shared_routes (share_code, session_id, created_by, created_at) VALUES (?, ?, ?, ?)`);
@@ -215,7 +217,11 @@ module.exports = {
     pin.id, userId
   ),
   getUserPins: (userId) => getUserPins.all(userId),
-  deletePin:   (id, userId) => deletePin.run(id, userId),
+  deletePin:    (id, userId) => deletePin.run(id, userId),
+  deleteSession: (id, userId) => {
+    deleteSessionCoords.run(id);
+    deleteSession.run(id, userId);
+  },
 
   // Legacy migration — assign any legacy data to this user
   migrateLegacyData: (userId) => {

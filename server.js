@@ -196,6 +196,13 @@ app.patch('/api/pins/:id', requireAuth, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.delete('/api/sessions/:id', requireAuth, (req, res) => {
+  try {
+    db.deleteSession(req.params.id, req.userId);
+    res.json({ deleted: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.delete('/api/pins/:id', requireAuth, (req, res) => {
   try { db.deletePin(req.params.id, req.userId); res.json({ deleted: true }); }
   catch(e) { res.status(500).json({ error: e.message }); }

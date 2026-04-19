@@ -1250,6 +1250,7 @@ body.pipeline-mode .leaflet-marker-icon:not(.pipeline-pin) { opacity: 0.15; }
         <button class="storm-tab-days active" data-std="365">1yr</button>
       </div>
     </div>
+    <div id="storms-outlook-banner" style="display:none;padding:10px 14px;background:#1a1400;border-bottom:1px solid #2a2200;flex-shrink:0"></div>
     <div style="padding:6px 14px;font-size:11px;color:#444;flex-shrink:0;border-bottom:1px solid #1a1a1a" id="storms-meta">Tap to load storm data</div>
     <div id="storms-map" style="flex:0 0 40%;min-height:0;position:relative"></div>
     <div id="storms-list" style="flex:1;overflow-y:auto;padding:8px 12px 80px"></div>
@@ -2502,6 +2503,68 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 
 function milesFromKm(km) { return km * 0.621371; }
 
+
+async function loadStormOutlook() {
+  const banner = document.getElementById('storms-outlook-banner');
+  if(!banner) return;
+  try {
+    const data = await api.get('/api/storm/outlook');
+    const outlooks = data.outlook || [];
+    if(!outlooks.length) {
+      banner.style.display = 'none';
+      return;
+    }
+
+    // Risk level order — highest wins per day
+    const riskOrder = ['HIGH','MDT','ENH','SLGT','MRGL','TSTM'];
+    const riskLabels = {
+      'HIGH':'🔴 HIGH','MDT':'🟠 MODERATE','ENH':'🟡 ENHANCED',
+      'SLGT':'🟡 SLIGHT','MRGL':'🟢 MARGINAL','TSTM':'⚪ GENERAL TSTM'
+    };
+    const riskColors = {
+      'HIGH':'#ff00ff','MDT':'#ff0000','ENH':'#ff9900',
+      'SLGT':'#ffff00','MRGL':'#66a366','TSTM':'#c0e8c0'
+    };
+
+    // Group by day, pick highest risk per day
+    const byDay = {};
+    outlooks.forEach(o => {
+      const code = o.riskCode.trim().toUpperCase();
+      if(!byDay[o.day]) byDay[o.day] = { code, label: riskLabels[code]||code, color: riskColors[code]||'#888' };
+      else {
+        const curIdx = riskOrder.indexOf(byDay[o.day].code);
+        const newIdx = riskOrder.indexOf(code);
+        if(newIdx < curIdx) {
+          byDay[o.day] = { code, label: riskLabels[code]||code, color: riskColors[code]||'#888' };
+        }
+      }
+    });
+
+    const dayOrder = ['Today','Tomorrow','Day 3'];
+    const hasSignificant = Object.values(byDay).some(d => ['HIGH','MDT','ENH','SLGT'].includes(d.code));
+
+    let html = `<div style="font-size:11px;font-weight:800;color:#f5a623;margin-bottom:6px;letter-spacing:1px">⚡ FORECAST — MD/VA/PA REGION</div>`;
+    html += `<div style="display:flex;gap:8px;flex-wrap:wrap">`;
+    dayOrder.forEach(day => {
+      if(!byDay[day]) return;
+      const d = byDay[day];
+      html += `<div style="background:${d.color}22;border:1px solid ${d.color}55;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:${d.color}">
+        ${day}: ${d.label}
+      </div>`;
+    });
+    html += `</div>`;
+    if(hasSignificant) {
+      html += `<div style="margin-top:6px;font-size:11px;color:#888">SPC Convective Outlook — tap storm events below for affected areas</div>`;
+    }
+
+    banner.innerHTML = html;
+    banner.style.display = 'block';
+  } catch(e) {
+    // Silently fail — outlook is supplemental
+    console.warn('Outlook fetch failed:', e.message);
+  }
+}
+
 async function renderStormsTab() {
   const wrap = document.getElementById('storms-wrap');
   const meta = document.getElementById('storms-meta');
@@ -2525,6 +2588,9 @@ async function renderStormsTab() {
 
   meta.textContent = 'Loading storm data…';
   list.innerHTML = '';
+
+  // ── Load forecast outlook ──────────────────────────────────────
+  loadStormOutlook();
 
   const events = await loadStormEvents();
   if(!events) { meta.textContent = 'Could not load storm data'; return; }
@@ -3853,9 +3919,21 @@ function renderHistTab(tab){
       dueToday.sort((a,b)=>a.followup_date.localeCompare(b.followup_date)).forEach(pin=>{
         const c2=STATUS_COLORS[pin.status]||'#f5a623';
         const d2=document.createElement('div');d2.className='pin-card';d2.style.borderColor='#e03b3b44';
-        d2.innerHTML=`<div style="display:flex;gap:12px;align-items:flex-start"><div style="flex:1;min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div class="pin-addr">${pin.address||'Unnamed stop'}</div><button class="pin-edit-btn" style="flex-shrink:0;min-width:44px;min-height:44px">✏️</button></div><span class="pin-badge" style="background:${c2}22;color:${c2};border:1px solid ${c2}44;display:inline-block;margin-bottom:4px">${pin.status||'–'}</span>${pin.owner_name?`<div style="font-size:12px;color:#888">👤 ${pin.owner_name}</div>`:''} ${pin.phone?`<div style="font-size:12px;color:#888">📞 ${pin.phone}</div>`:''} ${followupBadge(pin.followup_date)}</div></div>`;
+        d2.innerHTML=`<div style="display:flex;gap:12px;align-items:flex-start"><div style="flex:1;min-width:0"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div class="pin-addr">${pin.address||'Unnamed stop'}</div><div style="display:flex;gap:4px;flex-shrink:0"><button class="pin-edit-btn" style="min-width:44px;min-height:44px">✏️</button><button class="pin-del-btn" style="min-width:44px;min-height:44px;background:#1a0a0a;border:1px solid #3a1a1a;border-radius:8px;color:#e03b3b;font-size:16px;cursor:pointer;-webkit-tap-highlight-color:transparent">🗑️</button></div></div><span class="pin-badge" style="background:${c2}22;color:${c2};border:1px solid ${c2}44;display:inline-block;margin-bottom:4px">${pin.status||'–'}</span>${pin.owner_name?`<div style="font-size:12px;color:#888">👤 ${pin.owner_name}</div>`:''} ${pin.phone?`<div style="font-size:12px;color:#888">📞 ${pin.phone}</div>`:''} ${followupBadge(pin.followup_date)}</div></div>`;
         d2.querySelector('.pin-edit-btn').addEventListener('click',e=>{e.stopPropagation();document.getElementById('hist-panel').classList.remove('open');openSheet({lat:pin.lat,lng:pin.lng},pin);});
-        d2.addEventListener('click',e=>{if(e.target.classList.contains('pin-edit-btn'))return;document.getElementById('hist-panel').classList.remove('open');map.setView([pin.lat,pin.lng],18);});
+        d2.querySelector('.pin-del-btn').addEventListener('click', e => {
+          e.stopPropagation();
+          showConfirm(`Delete pin at ${pin.address||'this location'}?`, async () => {
+            try {
+              await api.del('/api/pins/' + pin.id);
+              pins = pins.filter(p => p.id !== pin.id);
+              renderAll();
+              renderHistTab('pins');
+              toast('Pin deleted');
+            } catch(ex) { toast('Could not delete pin', 3000); }
+          });
+        });
+        d2.addEventListener('click',e=>{if(e.target.classList.contains('pin-edit-btn')||e.target.classList.contains('pin-del-btn'))return;document.getElementById('hist-panel').classList.remove('open');map.setView([pin.lat,pin.lng],18);});
         body.appendChild(d2);
       });
       const sep=document.createElement('div');sep.style.cssText='height:1px;background:#1c1c1c;margin:12px 0 14px';body.appendChild(sep);
@@ -3872,7 +3950,7 @@ function renderHistTab(tab){
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:5px">
               <div class="pin-addr">${pin.address||'Unnamed stop'}</div>
               <button class="pin-nav-btn" data-lat="${pin.lat}" data-lng="${pin.lng}" data-addr="${pin.address||''}" style="flex-shrink:0;min-width:44px;min-height:44px;background:transparent;border:none;font-size:18px;cursor:pointer">🧭</button>
-              ${isShared ? '' : `<button class="pin-edit-btn" data-id="${pin.id}" style="flex-shrink:0;min-width:44px;min-height:44px">✏️</button>`}
+              ${isShared ? '' : `<button class="pin-edit-btn" data-id="${pin.id}" style="flex-shrink:0;min-width:44px;min-height:44px">✏️</button><button class="pin-del-card-btn" data-id="${pin.id}" style="flex-shrink:0;min-width:44px;min-height:44px;background:#1a0a0a;border:1px solid #3a1a1a;border-radius:8px;color:#e03b3b;font-size:16px;cursor:pointer;-webkit-tap-highlight-color:transparent">🗑️</button>`}
             </div>
             <span class="pin-badge" style="background:${c}22;color:${c};border:1px solid ${c}44;display:inline-block;margin-bottom:6px">${pin.status||'–'}</span>
             ${pin.notes ? `<div class="pin-notes">${pin.notes}</div>` : ''}
@@ -3888,6 +3966,7 @@ function renderHistTab(tab){
       `;
       card.addEventListener('click',e=>{
         if(e.target.classList.contains('pin-edit-btn')) return;
+        if(e.target.classList.contains('pin-del-card-btn')) return;
         document.getElementById('hist-panel').classList.remove('open');
         map.setView([pin.lat,pin.lng],18);
       });
@@ -3897,6 +3976,19 @@ function renderHistTab(tab){
           e.stopPropagation();
           document.getElementById('hist-panel').classList.remove('open');
           openSheet({lat:pin.lat,lng:pin.lng},pin);
+        });
+        const delBtn = card.querySelector('.pin-del-card-btn');
+        if(delBtn) delBtn.addEventListener('click', e=>{
+          e.stopPropagation();
+          showConfirm('Delete this pin?', async ()=>{
+            try {
+              await api.del('/api/pins/' + pin.id);
+              pins = pins.filter(p => p.id !== pin.id);
+              renderAll();
+              renderHistTab('pins');
+              toast('Pin deleted');
+            } catch(ex) { toast('Could not delete pin', 3000); }
+          });
         });
       }
       const navBtn = card.querySelector('.pin-nav-btn');

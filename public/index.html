@@ -1422,6 +1422,9 @@ let editingPin=null; // null = new pin, object = editing existing
 let histTab='routes',coverageMapInit=false;
 let importedRoutes=[], importedPins=[];
 let followMode=true; // auto-center map on user while tracking
+let _lastGpsPos = null;      // {lat, lng, ts} — for gap/spike detection
+let _lastGpsTime = null;     // ms timestamp of last valid GPS point
+let _gapSegmentOpen = false; // true when we're in a gap-broken segment
 let _mapFitted=false;
 let dropMode=false;
 let horizonShingle=false;
@@ -1778,6 +1781,7 @@ function startT(){
     map.setView([lat,lng],16);setYou(lat,lng);
     watchId=navigator.geolocation.watchPosition(onPos,onPosErr,{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
     followMode=true;
+    _lastGpsPos=null; _lastGpsTime=null; _gapSegmentOpen=false;
     document.getElementById('trackBtn').disabled=false;
     requestWakeLock();
     document.body.classList.add('tracking');
@@ -1791,13 +1795,45 @@ function startT(){
 }
 
 function onPos(pos){
-  const{latitude:lat,longitude:lng}=pos.coords;
-  setYou(lat,lng);
-  if(followMode) map.setView([lat,lng],map.getZoom(),{animate:true,duration:0.5});
-  if(!curSession)return;
-  const coord={lat,lng,ts:new Date().toISOString()};
-  curSession.coords.push(coord);curLine.addLatLng([lat,lng]);
-  coordBuffer.push(coord);if(coordBuffer.length>=15)flushCoords();
+  const{latitude:lat,longitude:lng,accuracy}=pos.coords;
+  const newPt = {lat, lng};
+
+  // ── Option 2: Spike filter ─────────────────────────────────────
+  // Discard points that imply impossibly fast travel
+  if(isGpsSpike(newPt, _lastGpsPos, _lastGpsTime)) {
+    return; // ignore this point entirely
+  }
+
+  setYou(lat, lng);
+  if(followMode) map.setView([lat, lng], map.getZoom(), {animate:true, duration:0.5});
+  if(!curSession) {
+    _lastGpsPos  = newPt;
+    _lastGpsTime = Date.now();
+    return;
+  }
+
+  // ── Option 1: Gap detection ────────────────────────────────────
+  // If > 90s since last point, break the polyline — don't draw a straight line
+  if(isGpsGap(_lastGpsTime)) {
+    // Start a new line segment from current position
+    // Save the old line, start fresh
+    if(curLine) allLines.push(curLine);
+    const newColor = curSession.color || sCol(sessions.length);
+    curLine = L.polyline([[lat, lng]], {color: newColor, weight: 6, opacity: 1}).addTo(map);
+    _gapSegmentOpen = true;
+    toast('GPS resumed — route gap detected', 2500);
+  } else {
+    _gapSegmentOpen = false;
+  }
+
+  const coord = {lat, lng, ts: new Date().toISOString()};
+  curSession.coords.push(coord);
+  curLine.addLatLng([lat, lng]);
+  coordBuffer.push(coord);
+  if(coordBuffer.length >= 15) flushCoords();
+
+  _lastGpsPos  = newPt;
+  _lastGpsTime = Date.now();
 }
 function onPosErr(err){toast({1:'Location denied',2:'GPS unavailable',3:'GPS timed out'}[err.code]||'GPS error',3000);}
 
@@ -1837,7 +1873,8 @@ async function stopT(){
   document.getElementById('timer').textContent='';
   document.getElementById('pinBtn').classList.remove('show');
   document.body.classList.remove('tracking');
-  followMode=true; showFollowBtn(false);
+  followMode=true; _lastGpsPos=null; _lastGpsTime=null; _gapSegmentOpen=false;
+  showFollowBtn(false);
   releaseWakeLock();
 }
 
@@ -2369,6 +2406,50 @@ function togglePipelineMode() {
     renderHistTab('pipeline');
   }
 }
+
+
+// ── GPS Quality Filters ────────────────────────────────────────────
+
+// Haversine distance in meters between two {lat,lng} points
+function gpsDistanceM(a, b) {
+  const R = 6371000;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const x = Math.sin(dLat/2)**2 +
+    Math.cos(a.lat * Math.PI/180) * Math.cos(b.lat * Math.PI/180) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
+
+// Option 2: Speed plausibility — returns true if point is a spike
+function isGpsSpike(newPt, prevPt, prevTime) {
+  if(!prevPt || !prevTime) return false;
+  const distM   = gpsDistanceM(prevPt, newPt);
+  const elapsedS = (Date.now() - prevTime) / 1000;
+  if(elapsedS < 0.5) return false; // ignore if too close in time
+  const speedMps = distM / elapsedS;
+  const speedMph = speedMps * 2.23694;
+  return speedMph > 90; // faster than 90mph = impossible on a canvassing route
+}
+
+// Option 1: Gap detection — returns true if we should break the polyline
+function isGpsGap(prevTime) {
+  if(!prevTime) return false;
+  const elapsedS = (Date.now() - prevTime) / 1000;
+  return elapsedS > 90; // > 90 seconds since last point = gap
+}
+
+// Option 3: Page Visibility API — request fresh GPS when screen comes back
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible' && tracking && watchId !== null) {
+    // Screen just came back — get a fresh position immediately
+    // to minimize the gap before watchPosition resumes
+    navigator.geolocation.getCurrentPosition(
+      pos => onPos(pos),
+      () => {}, // silent fail
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+    );
+  }
+});
 
 // ── Storms Tab ────────────────────────────────────────────────────
 let stormsMap = null, stormsMapInit = false;

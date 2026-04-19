@@ -268,9 +268,9 @@ app.delete('/api/coverage/shared/:sessionId', requireAuth, (req, res) => {
 // Source: https://www.spc.noaa.gov/wcm/data/{year}_{type}.csv
 // Hail, wind, tornado for MD, VA, PA, DE, WV — 13x more data than IEM for this region
 const https = require('https');
-const TARGET_STATES = new Set(['MD', 'VA', 'PA', 'DE', 'WV', 'DC']);
+const TARGET_STATES = new Set(['MD', 'VA', 'PA']); // MD/VA/PA only — 1yr claim window
 let stormCache = { data: null, fetchedAt: 0 };
-const STORM_TTL = 24 * 60 * 60 * 1000; // 24hr — historical data doesn't change
+const STORM_TTL = 4 * 60 * 60 * 1000;  // 4hr cache — less data, refresh more often
 
 // Generic fetch helper
 function fetchJSON(url, redirectCount = 0) {
@@ -358,7 +358,7 @@ async function fetchSPCcsv(year, type) {
 
 async function loadSPCData() {
   const currentYear = new Date().getFullYear();
-  const years = [currentYear, currentYear - 1, currentYear - 2];
+  const years = [currentYear, currentYear - 1]; // 1yr historical — insurance claim limit
   const types = ['hail', 'wind', 'torn'];
   const allResults = [];
   for (const year of years) {
@@ -391,6 +391,85 @@ app.get('/api/storm/events', requireAuth, async (req, res) => {
     res.json(stormCache.data.filter(e => e.date >= cutoff));
   } catch(e) {
     console.error('Storm events error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+// ── Storm Forecast (NOAA SPC Convective Outlook — Day 1/2/3) ──────
+// Source: mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks
+// Free public GeoJSON — updates ~6x per day as SPC issues new outlooks
+// Risk levels: TSTM < MRGL < SLGT < ENH < MDT < HIGH
+
+let outlookCache = { data: null, fetchedAt: 0 };
+const OUTLOOK_TTL = 60 * 60 * 1000; // 1hr cache — SPC updates ~6x/day
+
+// Bounding box for MD/VA/PA
+const REGION_BBOX = { minLat: 36.5, maxLat: 42.5, minLng: -80.5, maxLng: -74.0 };
+
+function bboxOverlapsRegion(geometry) {
+  // Quick check: does any coordinate in the geometry fall in our region?
+  const coords = geometry.coordinates || [];
+  function checkRing(ring) {
+    return ring.some(([lng, lat]) =>
+      lat >= REGION_BBOX.minLat && lat <= REGION_BBOX.maxLat &&
+      lng >= REGION_BBOX.minLng && lng <= REGION_BBOX.maxLng
+    );
+  }
+  function checkCoords(c, depth = 0) {
+    if(!Array.isArray(c)) return false;
+    if(typeof c[0] === 'number') return false; // single coord
+    if(typeof c[0][0] === 'number') return checkRing(c); // ring
+    return c.some(sub => checkCoords(sub, depth + 1));
+  }
+  return checkCoords(coords);
+}
+
+async function fetchOutlookDay(layerId, dayLabel) {
+  const url = `https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/${layerId}/query?f=geojson&where=1%3D1&outFields=LABEL,LABEL2,FILL,STROKE,DN&returnGeometry=true`;
+  try {
+    const data = await fetchJSON(url);
+    if(!data.features) return [];
+    // Filter to features that overlap our region
+    return data.features
+      .filter(f => f.geometry && bboxOverlapsRegion(f.geometry))
+      .map(f => ({
+        day: dayLabel,
+        risk: f.properties.LABEL2 || f.properties.LABEL || 'Unknown',
+        riskCode: f.properties.LABEL || '',
+        fill: f.properties.FILL || '#888888',
+        dn: f.properties.DN || 0,
+      }));
+  } catch(e) {
+    console.warn(`Outlook ${dayLabel} fetch failed:`, e.message);
+    return [];
+  }
+}
+
+async function loadOutlookData() {
+  // Layer IDs: 1=Day1 Categorical, 9=Day2 Categorical, 18=Day3 Categorical
+  const [day1, day2, day3] = await Promise.all([
+    fetchOutlookDay(1, 'Today'),
+    fetchOutlookDay(9, 'Tomorrow'),
+    fetchOutlookDay(18, 'Day 3'),
+  ]);
+  return [...day1, ...day2, ...day3];
+}
+
+app.get('/api/storm/outlook', requireAuth, async (req, res) => {
+  try {
+    if(!outlookCache.data || (Date.now() - outlookCache.fetchedAt) > OUTLOOK_TTL) {
+      console.log('Fetching SPC convective outlook...');
+      outlookCache.data = await loadOutlookData();
+      outlookCache.fetchedAt = Date.now();
+    }
+    res.json({
+      outlook: outlookCache.data,
+      fetchedAt: new Date(outlookCache.fetchedAt).toISOString(),
+      region: 'MD/VA/PA',
+    });
+  } catch(e) {
+    console.error('Outlook error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });

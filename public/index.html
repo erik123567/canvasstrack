@@ -3432,7 +3432,29 @@ document.getElementById('pinBtn').addEventListener('click',()=>{
 
 document.getElementById('quickPinBtn').addEventListener('click',()=>{
   if(dropMode){ exitDropMode(); return; }
-  enterDropMode();
+  // Center map on current GPS location first, then show crosshair
+  if('geolocation' in navigator){
+    const btn = document.getElementById('quickPinBtn');
+    btn.textContent = '⏳';
+    btn.disabled = true;
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        btn.textContent = '📍';
+        btn.disabled = false;
+        map.setView([pos.coords.latitude, pos.coords.longitude], Math.max(map.getZoom(), 17));
+        enterDropMode();
+      },
+      () => {
+        // GPS failed — just open crosshair at current map center
+        btn.textContent = '📍';
+        btn.disabled = false;
+        enterDropMode();
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+    );
+  } else {
+    enterDropMode();
+  }
 });
 
 document.getElementById('pin-cancel-btn').addEventListener('click',()=>{
